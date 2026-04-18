@@ -1,0 +1,16 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "required": ["schema", "run_id", "write_id", "turn_index", "writer_role", "topic_id", "artifact", "artifact_kind", "ts"],
+  "properties": {
+    "schema":        {"type": "string"},
+    "run_id":        {"type": "string"},
+    "write_id":      {"type": "string"},
+    "turn_index":    {"type": "integer"},
+    "writer_role":   {"type": "string"},
+    "topic_id":      {"type": "string"},
+    "artifact":      {"type": "string"},
+    "artifact_kind": {"type": "string"},
+    "ts":            {"type": "string", "format": "date-time"}
+  },
+  "additionalProperties": true
+}

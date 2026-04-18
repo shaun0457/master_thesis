@@ -1,0 +1,15 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "required": ["schema", "run_id", "turn_index", "sender", "status", "violations", "next_owner", "ts"],
+  "properties": {
+    "schema":      {"type": "string"},
+    "run_id":      {"type": "string"},
+    "turn_index":  {"type": "integer"},
+    "sender":      {"type": "string"},
+    "status":      {"type": "string"},
+    "violations":  {"type": "array"},
+    "next_owner":  {"type": "string"},
+    "ts":          {"type": "string", "format": "date-time"}
+  },
+  "additionalProperties": true
+}

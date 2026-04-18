@@ -1,0 +1,244 @@
+# roles/capabilities.yaml
+# Capability registry used by Router validation and CI checks.
+# Aligns with PTOW legality matrix and run.turn.v2 intent/action enumerations.
+
+schema_version: "1.0"
+
+roles:
+  Supervisor:
+    id: "supervisor"
+    description: "Coordinator; plans, delegates, reviews; no domain work."
+    intents_allowed:
+      - plan
+      - delegate_subtask
+      - review_accept
+      - review_reject
+      - request_evidence
+      - recovery
+      - report
+      - synthesis        # for Debate/Delphi synthesis gate if applicable
+      - consensus        # for Delphi consensus gate
+    actions_allowed:
+      - plan
+      - delegate
+      - review
+      - request
+      - recover
+      - report
+      - synthesis
+      - consensus
+    can_target:
+      - DE
+      - DS
+      - ME
+    restricted:
+      tools: true          # supervisor does not call tools
+      peer_to_peer: false  # N/A (Supervisor is not a worker)
+    policies:
+      anti_contamination: true
+      evidence_first: true
+
+  DE:
+    id: "de"
+    description: "Data Engineer; governed ingestion, transformation, schema, pipelines."
+    intents_allowed:
+      - work
+      - report
+      - request_evidence
+      - recovery
+      - stance           # for Debate role when applicable
+      - synthesis        # only in Debate; guarded by Router phase rules
+    actions_allowed:
+      - work
+      - report
+      - request
+      - recover
+      - stance
+      - synthesis
+    can_target:
+      - Supervisor       # PTOW: DE must report to Supervisor; no DE→DS/ME
+    restricted:
+      peer_to_peer: true # PTOW forbids DE→DS/ME direct handoff
+      tools: true        # tools are allowed but governed by policies
+    policies:
+      anti_contamination: true
+      evidence_first: true
+
+  DS:
+    id: "ds"
+    description: "Data Scientist; modeling, inference, evaluation; governed inputs only."
+    intents_allowed:
+      - work
+      - report
+      - request_evidence
+      - recovery
+      - stance
+      - synthesis
+    actions_allowed:
+      - work
+      - report
+      - request
+      - recover
+      - stance
+      - synthesis
+    can_target:
+      - Supervisor
+    restricted:
+      peer_to_peer: true
+      tools: true
+    policies:
+      anti_contamination: true
+      evidence_first: true
+
+  ME:
+    id: "me"
+    description: "Manufacturing/Process domain expert; diagnostics, causal hypotheses, governed references."
+    intents_allowed:
+      - work
+      - report
+      - request_evidence
+      - recovery
+      - stance
+      - synthesis
+    actions_allowed:
+      - work
+      - report
+      - request
+      - recover
+      - stance
+      - synthesis
+    can_target:
+      - Supervisor
+    restricted:
+      peer_to_peer: true
+      tools: false         # typically text-only; adjust if you allow tools
+    policies:
+      anti_contamination: true
+      evidence_first: true
+
+protocols:
+  planner_to_worker:
+    legality_matrix:
+      Supervisor:
+        can_target: ["DE", "DS", "ME"]
+      DE:
+        can_target: ["Supervisor"]
+      DS:
+        can_target: ["Supervisor"]
+      ME:
+        can_target: ["Supervisor"]
+    phases:
+      - name: "init"
+        description: "Supervisor issues plan with acceptance & milestones."
+      - name: "exec"
+        description: "Worker executes; periodic reports to Supervisor."
+      - name: "review"
+        description: "Supervisor review/accept/reject; loop until accepted."
+    constraints:
+      forbid_peer_to_peer: true
+      forbid_parallel_first_two_rounds: true
+      require_plan_first_turn: true
+      max_consecutive_worker_turns: 3
+
+  neutral:
+    legality_matrix:
+      Supervisor: { can_target: ["DE", "DS", "ME"] }
+      DE:         { can_target: ["Supervisor", "DE", "DS", "ME"] }
+      DS:         { can_target: ["Supervisor", "DE", "DS", "ME"] }
+      ME:         { can_target: ["Supervisor", "DE", "DS", "ME"] }
+    constraints:
+      forbid_peer_to_peer: false
+
+  debate:
+    roles: ["DE", "DS", "ME"]  # All three workers can debate
+    phases:
+      - name: "r1_thesis"
+        description: "Workers propose initial stances"
+        peer_to_peer: true         # ✅ Peer debate allowed throughout!
+        max_consecutive_peer: 4    # Allow up to 4 consecutive peer turns
+      - name: "r2_critique"
+        description: "Workers critique each other's positions"
+        peer_to_peer: true
+        max_consecutive_peer: 5
+      - name: "r3_resolution"
+        description: "Workers negotiate toward agreement"
+        peer_to_peer: true
+        max_consecutive_peer: 6
+    legality_matrix:
+      Supervisor:
+        can_target: ["DE", "DS", "ME"]
+      DE:
+        can_target: ["Supervisor", "DS", "ME"]  # ✅ Can directly debate with DS/ME
+      DS:
+        can_target: ["Supervisor", "DE", "ME"]  # ✅ Can directly debate with DE/ME
+      ME:
+        can_target: ["Supervisor", "DE", "DS"]  # ✅ Can directly debate with DE/DS
+    supervisor_interrupt:
+      enabled: true
+      description: "Supervisor can interrupt infinite peer loops"
+      triggers:
+        - type: "consecutive_peer_turns"
+          threshold_phase_specific: true  # Use max_consecutive_peer from phase config
+        - type: "manual_intervention"
+          description: "Supervisor can force interrupt via recovery intent"
+    constraints:
+      max_rounds: 6
+      require_final_synthesis: true
+      reference_previous_stance: true
+      forbid_peer_to_peer: false  # ✅ Explicitly allow peer-to-peer
+
+  delphi:
+    phases:
+      - name: "r1_independent"
+        description: "Workers independently propose solutions"
+        peer_to_peer: false        # ❌ R1: NO peer interaction, isolation required
+        supervisor_gate: true      # Supervisor collects proposals
+        max_consecutive_peer: 0    # Zero peer turns allowed
+      - name: "aggregate"
+        description: "Supervisor aggregates R1 proposals"
+        peer_to_peer: false
+        supervisor_only: true      # Only Supervisor acts in this phase
+      - name: "r2_revision"
+        description: "Workers critique each other and revise"
+        peer_to_peer: true         # ✅ R2: Peer critique allowed!
+        max_consecutive_peer: 3    # Allow up to 3 consecutive peer turns
+      - name: "r3_consensus"
+        description: "Workers negotiate toward consensus"
+        peer_to_peer: true         # ✅ R3: Peer negotiation allowed!
+        max_consecutive_peer: 5    # Allow up to 5 consecutive peer turns
+    legality_matrix_r1:
+      # R1 phase: Workers can ONLY report to Supervisor
+      Supervisor:
+        can_target: ["DE", "DS", "ME"]
+      DE:
+        can_target: ["Supervisor"]  # ❌ Cannot talk to DS/ME in R1
+      DS:
+        can_target: ["Supervisor"]  # ❌ Cannot talk to DE/ME in R1
+      ME:
+        can_target: ["Supervisor"]  # ❌ Cannot talk to DE/DS in R1
+    legality_matrix_r2_r3:
+      # R2-R3 phases: Workers can critique/negotiate with peers
+      Supervisor:
+        can_target: ["DE", "DS", "ME"]
+      DE:
+        can_target: ["Supervisor", "DS", "ME"]  # ✅ Can critique peers
+      DS:
+        can_target: ["Supervisor", "DE", "ME"]  # ✅ Can critique peers
+      ME:
+        can_target: ["Supervisor", "DE", "DS"]  # ✅ Can critique peers
+    supervisor_interrupt:
+      enabled: true
+      description: "Supervisor can interrupt excessive peer loops in R2-R3"
+      triggers:
+        - type: "consecutive_peer_turns"
+          threshold_phase_specific: true  # Use max_consecutive_peer from phase
+        - type: "phase_transition"
+          description: "Supervisor gates R1→aggregate and R2→R3→consensus"
+        - type: "manual_intervention"
+          description: "Supervisor can force interrupt via recovery intent"
+    constraints:
+      isolation_r1: true
+      require_revision_note_r2: true
+      require_consensus_note: true
+      forbid_peer_to_peer_r1: true   # ❌ Explicitly forbid in R1
+      allow_peer_to_peer_r2_r3: true # ✅ Explicitly allow in R2-R3
