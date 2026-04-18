@@ -10,15 +10,17 @@ Code submission for Master's Thesis: *Analyzing Prompt Strategies for Improving 
 
 ## Overview
 
-This repository contains the implementation of the O-MAS (Observable Multi-Agent System) framework for evaluating LLM-based multi-agent collaboration. The system enables systematic comparison of collaboration protocols through behavioral signal extraction and process metric analysis.
+O-MAS (Observable Multi-Agent System) is a research framework for evaluating LLM-based multi-agent collaboration under different coordination protocols. Four specialized agents — Supervisor, Data Engineer, Data Scientist, and Machine Expert — communicate through a shared blackboard and are governed by a protocol-aware router. All interactions are logged as structured events, enabling post-hoc extraction of behavioral and process metrics.
 
 ### Key Features
 
 - **Four Collaboration Protocols:** Neutral, Planner-to-Worker, Debate, Delphi
 - **Four Agent Roles:** Supervisor, Data Engineer, Data Scientist, Machine Expert
-- **Blackboard Communication:** Shared memory pattern for agent coordination
-- **Event Logging:** Complete observability pipeline for metric extraction
+- **Blackboard Communication:** URI-based shared memory (`bb://topic/artifact`)
+- **Structured Event Logging:** `run.turn.v2`, `router.event.v2`, `bb.write.v1`, `run.read.v1`
+- **JSON Schema Validation:** All events validated before writing
 - **Process Metrics:** Centralization, entropy, Gini, reuse, orphan, loop density, TDI
+- **Test Suite:** 113 tests, 98% coverage on core modules
 
 ---
 
@@ -26,190 +28,116 @@ This repository contains the implementation of the O-MAS (Observable Multi-Agent
 
 ```
 code_submission/
-├── README.md                    # This file
+├── README.md
+├── requirements.txt             # Python dependencies
+├── schema/                      # JSON Schema definitions
+│   ├── run.turn.v2.json         # Agent turn event schema
+│   ├── router.event.v2.json     # Router event schema
+│   ├── bb.write.v1.json         # Blackboard write event schema
+│   └── run.read.v1.json         # Blackboard read event schema
 ├── mas/                         # Core MAS framework
 │   ├── runtime/
-│   │   └── loop.py              # Main execution loop
+│   │   └── loop.py              # Main orchestration loop
 │   ├── blackboard/
-│   │   ├── __init__.py
-│   │   └── store.py             # Blackboard storage backend
+│   │   └── store.py             # Blackboard storage (URI-based, atomic writes)
+│   ├── core/
+│   │   └── router.py            # Protocol router (P2P enforcement, violation tracking)
 │   ├── logging/
-│   │   ├── __init__.py
-│   │   └── event_writer.py      # Event logging functions
+│   │   └── event_writer.py      # Structured JSONL event writers
+│   ├── tools/
+│   │   └── __init__.py          # Tool stubs (SQLSandbox, RAGEngine, MLToolbox)
 │   ├── io/
-│   │   ├── metrics.py           # Metric computation functions
+│   │   ├── metrics.py           # Metric computation
 │   │   ├── event_reader.py      # Event log parser
-│   │   └── utils.py             # Utility functions
+│   │   └── utils.py             # Utilities
 │   └── enrich/
-│       ├── tdi.py               # Topic Drift Index computation
-│       └── policy.py            # Policy adherence computation
+│       ├── tdi.py               # Topic Drift Index
+│       └── policy.py            # Policy adherence
 ├── agents/                      # Agent implementations
-│   ├── __init__.py
-│   ├── supervisor.py            # Supervisor agent
-│   ├── de.py                    # Data Engineer agent
-│   ├── ds.py                    # Data Scientist agent
-│   └── me.py                    # Machine Expert agent
-├── analysis/                    # Analysis scripts
-│   ├── run_models.py            # GLMM and mediation analysis
-│   └── scripts/
-│       └── extract_metrics.py   # Metric extraction from logs
-├── tools/                       # Utility tools
-│   ├── make_result.py           # Generate result.json
-│   └── make_leaderboard.py      # Generate leaderboard
-├── cli/
-│   └── run_experiment.py        # Experiment execution CLI
+│   ├── base.py                  # BaseAgent (LLM call, blackboard I/O, prompt loading)
+│   ├── supervisor.py
+│   ├── de.py                    # Data Engineer (SQL sandbox integration)
+│   ├── ds.py                    # Data Scientist (ML toolbox integration)
+│   └── me.py                    # Machine Expert (RAG integration)
 ├── prompts/                     # Prompt templates
 │   ├── roles/                   # Role card prompts
-│   │   ├── supervisor.md
-│   │   ├── data_engineer.md
-│   │   ├── data_scientist.md
-│   │   └── machine_expert.md
-│   └── protocols/               # Protocol-specific prompts
+│   └── protocols/               # Protocol-specific overlays
 │       ├── neutral/
 │       ├── planner_to_worker/
 │       ├── debate/
 │       └── delphi/
-└── facts/
-    └── references.bib           # Bibliography (BibTeX)
+├── analysis/                    # Statistical analysis scripts
+│   ├── run_models.py            # GLMM and mediation analysis
+│   └── scripts/
+│       └── extract_metrics.py
+├── cli/
+│   └── run_experiment.py        # Batch experiment CLI
+├── tools/
+│   ├── make_result.py
+│   └── make_leaderboard.py
+├── facts/
+│   └── references.bib
+└── tests/                       # Pytest test suite (113 tests, 98% coverage)
+    ├── test_schemas.py
+    ├── test_tools_stubs.py
+    ├── test_router.py
+    ├── test_event_writer.py
+    └── test_base_agent.py
 ```
 
 ---
 
-## Core Components
+## Installation
 
-### 1. Runtime Loop (`mas/runtime/loop.py`)
+```bash
+# Clone the repository
+git clone https://github.com/shaun0457/master_thesis.git
+cd master_thesis
 
-The main orchestration logic for running multi-agent experiments:
+# Install dependencies
+pip install -r requirements.txt
+
+# Set your Gemini API key
+export GEMINI_API_KEY=your_key_here
+```
+
+**Python 3.10+ required.**
+
+> **Note:** The `SQLSandbox`, `RAGEngine`, and `MLToolbox` components require proprietary TEP datasets that are not included in this public release. The codebase degrades gracefully — agents print a warning and continue without those tools.
+
+---
+
+## Quick Start
+
+### Run a Single Experiment
 
 ```python
+from pathlib import Path
 from mas.runtime.loop import run_experiment
 
 summary = run_experiment(
     protocol='debate',
-    query_path=Path('queries/task.md'),
+    query_path=Path('queries/diagnosis_task.md'),
     run_id='debate-s42-20241115',
     seed=42,
     model_cfg={'model_name': 'gemini-2.5-pro', 'temperature': 0.25},
     max_turns=20
 )
+print(f"Completed: {summary['completed']} in {summary['turns']} turns")
+print(f"Violations: {summary['violations']}")
 ```
 
-### 2. Blackboard Store (`mas/blackboard/store.py`)
+### Run from CLI
 
-Shared memory for agent communication using URI-based addressing:
-
-```python
-from mas.blackboard import BlackboardStore
-
-store = BlackboardStore(root=Path("data/blackboard"), run_id="run-001")
-store.write_json("bb://analysis/stats.json", {"mean": 42.5})
-data = store.read_json("bb://analysis/stats.json")
-```
-
-### 3. Event Logging (`mas/logging/event_writer.py`)
-
-Structured event logging for observability:
-
-```python
-from mas.logging.event_writer import write_turn, write_bb_write
-
-write_turn(store, {
-    "turn_index": 5,
-    "role": "supervisor",
-    "message": "Delegating analysis to DS...",
-    "intent": "delegate"
-})
-```
-
-### 4. Metric Computation (`mas/io/metrics.py`)
-
-Extract behavioral signals from event logs:
-
-```python
-from mas.io.metrics import (
-    compute_centralization,
-    compute_handoff_entropy,
-    compute_ownership_gini,
-    compute_loop_density,
-    compute_reuse_and_orphan
-)
-
-C = compute_centralization(router_events)
-H = compute_handoff_entropy(router_events)
-G = compute_ownership_gini(turn_events)
-L = compute_loop_density(router_events)
-```
-
----
-
-## Collaboration Protocols
-
-### Neutral (Baseline)
-- Minimal coordination rules
-- Agents self-organize
-- No structured deliberation
-
-### Planner-to-Worker (P2W)
-- Supervisor creates work plans
-- Workers execute assigned tasks
-- Hierarchical coordination
-
-### Debate
-- Adversarial argumentation
-- Supervisor acts as judge
-- Resolution through synthesis
-
-### Delphi
-- Anonymous iterative feedback
-- Convergence toward consensus
-- Reflective rounds
-
----
-
-## Process Metrics
-
-### Topology Metrics
-| Metric | Symbol | Description |
-|--------|--------|-------------|
-| Centralization | C | Freeman's degree centralization [0,1] |
-| Handoff Entropy | H | Shannon entropy of delegations |
-| Ownership Gini | G | Inequality in turn authorship [0,1] |
-
-### Knowledge-Flow Metrics
-| Metric | Symbol | Description |
-|--------|--------|-------------|
-| Reuse Rate | reuse | Fraction of writes that were read |
-| Orphan Rate | orphan | Fraction of writes never read |
-| Response Speed | resp | 1 - (t_first_read / t_ceiling) |
-
-### Stability Metrics
-| Metric | Symbol | Description |
-|--------|--------|-------------|
-| Loop Density | L | Cyclic paths / total paths [0,1] |
-| Topic Drift Index | TDI | Semantic drift from goal |
-
-### Composite Outcomes
-| Metric | Symbol | Formula |
-|--------|--------|---------|
-| Process Stability | PSI | 0.50×(1-L) + 0.50×(1-C) |
-| Operational Efficiency | OEI | 1 - min(turns/50, 1.0) |
-| Cooperation Quality | Y₂ | 0.35×reuse + 0.30×(1-G) + 0.20×resp + 0.15×H_norm |
-
----
-
-## Running Experiments
-
-### Single Run
 ```bash
+# Single run
 python -m mas.runtime.loop \
     --query queries/diagnosis_task.md \
     --protocol debate \
     --seed 42 \
     --max-turns 20
-```
 
-### Batch Execution
-```bash
+# Batch across all protocols and seeds
 python cli/run_experiment.py \
     --protocols neutral planner_to_worker debate delphi \
     --seeds 1 2 3 4 5 \
@@ -218,31 +146,133 @@ python cli/run_experiment.py \
 
 ---
 
-## Output Files
+## Architecture
 
-After each run, the following files are generated:
+```
+┌─────────────────────────────────────────────────────────┐
+│                      run_experiment()                   │
+│                                                         │
+│  ┌──────────┐   turn_message    ┌──────────┐            │
+│  │Supervisor│ ◄────────────────►│  Router  │            │
+│  └──────────┘                   └──────────┘            │
+│       │                              │                  │
+│  delegate                     route + log               │
+│       │                              │                  │
+│  ┌────▼─────────────────────────┐    │                  │
+│  │  DE  │  DS  │  ME            │    │                  │
+│  └──────┴──────┴────────────────┘    │                  │
+│       │                              │                  │
+│  bb:// read/write              event_writer             │
+│       │                              │                  │
+│  ┌────▼───────────────────────────────▼───────────────┐ │
+│  │           BlackboardStore  /  JSONL Logs           │ │
+│  └────────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────┘
+```
+
+### Communication Protocols
+
+| Protocol | P2P Workers | Violation Action | Use Case |
+|----------|-------------|-----------------|----------|
+| `neutral` | Allowed | None | Baseline |
+| `planner_to_worker` | Blocked → Supervisor | Hard violation | Hierarchical coordination |
+| `debate` | Allowed with warning | Warning only | Adversarial deliberation |
+| `delphi` | Allowed | None | Anonymous consensus |
+
+### Event Schema
+
+All agent interactions produce structured events validated against JSON Schemas:
+
+| Event | File | Description |
+|-------|------|-------------|
+| `run.turn.v2` | `run.turn.v2.jsonl` | Agent turn (message, intent, action) |
+| `router.event.v2` | `router.event.v2.jsonl` | Routing decision, violations |
+| `bb.write.v1` | `bb.write.v1.jsonl` | Blackboard artifact creation |
+| `run.read.v1` | `run.read.v1.jsonl` | Blackboard artifact access |
+
+---
+
+## Process Metrics
+
+### Topology
+| Metric | Symbol | Formula |
+|--------|--------|---------|
+| Centralization | C | Freeman's degree centralization [0,1] |
+| Handoff Entropy | H | Shannon entropy of delegations |
+| Ownership Gini | G | Inequality in turn authorship [0,1] |
+
+### Knowledge Flow
+| Metric | Symbol | Description |
+|--------|--------|-------------|
+| Reuse Rate | reuse | Fraction of writes read by others |
+| Orphan Rate | orphan | Fraction of writes never read |
+| Response Speed | resp | 1 − (t_first_read / t_ceiling) |
+
+### Stability
+| Metric | Symbol | Description |
+|--------|--------|-------------|
+| Loop Density | L | Cyclic paths / total paths [0,1] |
+| Topic Drift Index | TDI | Semantic drift from goal embedding |
+
+### Composite Outcomes
+| Outcome | Formula |
+|---------|---------|
+| Process Stability (PSI) | 0.50×(1−L) + 0.50×(1−C) |
+| Operational Efficiency (OEI) | 1 − min(turns/50, 1.0) |
+| Cooperation Quality (Y₂) | 0.35×reuse + 0.30×(1−G) + 0.20×resp + 0.15×H_norm |
+
+---
+
+## Output Files
 
 ```
 data/runs/{run_id}/
-├── run.turn.v2.jsonl      # Turn events (agent actions)
-├── router.event.v2.jsonl  # Router decisions
-├── bb.write.v1.jsonl      # Blackboard writes
-├── run.read.v1.jsonl      # Blackboard reads
-├── stdout.txt             # Complete execution log
+├── run.turn.v2.jsonl      # Agent turn events
+├── router.event.v2.jsonl  # Router validation events
+├── bb.write.v1.jsonl      # Blackboard write events
+├── run.read.v1.jsonl      # Blackboard read events
+├── stdout.txt             # Full execution log
 ├── final_output.txt       # Extracted final report
-└── result.json            # Computed metrics
+└── result.json            # Computed metrics (after extract_metrics.py)
 ```
 
 ---
 
-## Dependencies
+## Tests
 
-- Python 3.10+
-- networkx (graph analysis)
-- numpy (numerical computation)
-- pandas (data manipulation)
-- jsonschema (validation)
-- google-generativeai (LLM API)
+```bash
+# Install test dependencies (included in requirements.txt)
+pip install pytest pytest-cov
+
+# Run full test suite
+pytest tests/ -v
+
+# Run with coverage report
+pytest tests/ --cov=mas --cov=agents --cov-report=term-missing
+```
+
+### Coverage (core modules)
+
+| Module | Coverage |
+|--------|---------|
+| `mas/tools/__init__.py` | 100% |
+| `mas/core/router.py` | 100% |
+| `mas/logging/event_writer.py` | 99% |
+| `agents/base.py` | 97% |
+| `agents/__init__.py` | 100% |
+| **Average (5 core modules)** | **98%** |
+
+---
+
+## Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `GEMINI_API_KEY` | — | Required for LLM calls |
+| `GEMINI_MODEL` | `gemini-2.5-pro` | Model identifier |
+| `GEMINI_TEMP` | `0.25` | Sampling temperature |
+| `BB_ROOT` | `data/blackboard` | Blackboard storage root |
+| `RUNS_ROOT` | `data/runs` | Event log output root |
 
 ---
 
@@ -250,21 +280,19 @@ data/runs/{run_id}/
 
 See `facts/references.bib` for complete bibliography.
 
-Key references:
 - Freeman, L. C. (1978). Centrality in social networks
 - Hayes-Roth, B. (1985). A blackboard architecture for control
-- Wooldridge, M. (1995). Intelligent agents: theory and practice
+- Wooldridge, M. & Jennings, N. R. (1995). Intelligent agents: theory and practice
 
 ---
 
 ## License
 
-Internal research use only.
+Internal research use only. All rights reserved.
 
 ---
 
 ## Contact
 
-For questions about this implementation:
-- Author: Cheng-Ting Chen
-- Institution: Technische Universität Darmstadt
+**Cheng-Ting Chen**
+Technische Universität Darmstadt
