@@ -76,14 +76,18 @@ def create_de_executor(mode: str, tools_for_agent: List, system_prompt: Optional
 # 2) DE 節點：只負責讓 LLM 產生下一步（Think/Act）
 # -----------------------------
 def de_node(state: AgentState, agent_executor):
+    import time
+    from metrics import _ensure_metrics
     print("\n[Node] >>> DataEngineer")
-    # print(f"[DE][In] last human: { _last_human_snippet(state)!r }")
     snippet = _last_human_snippet(state)
     print("[DE][In] last human: %r" % snippet)
 
-    # 注意：你的 DE executor 目前是吃 {"messages": state["messages"]}
-    # 如果你的 executor 改成吃整個 state，就把下一行換成：res = agent_executor.invoke(state)
+    t0 = time.time() * 1000
     res = agent_executor.invoke({"messages": state["messages"]})
+    latency = time.time() * 1000 - t0
+    m = _ensure_metrics(state)
+    m["llm_calls_total"] = m.get("llm_calls_total", 0) + 1
+    m["llm_latency_ms_sum"] = m.get("llm_latency_ms_sum", 0.0) + latency
 
     # 兼容多種回傳型態
     msgs: list[BaseMessage] = []

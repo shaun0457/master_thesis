@@ -63,12 +63,19 @@ def create_ds_executor(mode: str, tools: List, system_prompt: Optional[str] = No
 
 # --- 通用节点 (直接从旧文件复制) ---
 def ds_node(state: Dict[str, Any], executor):
+    import time
+    from llm_harness import SelfEvaluator
+    from metrics import _ensure_metrics
     print("\n[Node] >>> DataScientist")
-    # print(f"[DS][In] last human: { _last_human_snippet(state)!r }")
     snippet = _last_human_snippet(state)
     print("[DS][In] last human: %r" % snippet)
-    # 你的 DS executor 目前看起來是吃整個 state
+
+    t0 = time.time() * 1000
     res = executor.invoke(state)
+    latency = time.time() * 1000 - t0
+    m = _ensure_metrics(state)
+    m["llm_calls_total"] = m.get("llm_calls_total", 0) + 1
+    m["llm_latency_ms_sum"] = m.get("llm_latency_ms_sum", 0.0) + latency
 
     msgs: list[BaseMessage] = []
     if isinstance(res, dict) and "messages" in res:
@@ -79,10 +86,12 @@ def ds_node(state: Dict[str, Any], executor):
         print(f"[DS][DEBUG] unexpected executor result type: {type(res)} -> {res!r}")
 
     found_any = False
+    last_ai_text = ""
     for msg in msgs:
         if isinstance(msg, AIMessage):
             found_any = True
             text = _extract_text_content(msg)
+            last_ai_text = text or last_ai_text
             print(f"[DS][Thought] {text if text else '(empty)'}")
             tcs = getattr(msg, "tool_calls", None) or []
             if tcs:
@@ -91,6 +100,14 @@ def ds_node(state: Dict[str, Any], executor):
                 print("[DS][Plan tools] (none)")
     if not found_any:
         print("[DS][DEBUG] no AIMessage found to print Thought")
+
+    # SelfEvaluator（非阻塞）
+    if last_ai_text:
+        try:
+            from common import llm as _llm
+            SelfEvaluator().evaluate(_llm, last_ai_text, "DS", state)
+        except Exception:
+            pass
 
     return {"messages": msgs or ([res] if isinstance(res, BaseMessage) else [])}
 

@@ -104,6 +104,9 @@ class AgentState(TypedDict, total=False):
     # 通用监控
     tool_events: List[Dict[str, Any]]
     metrics: Dict[str, Any]
+    # 2026 harness
+    token_usage: Dict[str, Any]
+    harness_metrics: Dict[str, Any]
 
 # ===== 日志记录辅助 =====
 def _msg_to_dict(msg: BaseMessage) -> dict:

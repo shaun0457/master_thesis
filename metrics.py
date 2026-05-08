@@ -37,6 +37,33 @@ def _ensure_metrics(state_or_obj: dict) -> dict:
     m.setdefault("ds_insight_depth_score", 0)
     m.setdefault("ds_repro_completeness", 0.0)
 
+    # --- 2026 harness 指標 ---
+    # LLM 呼叫統計
+    m.setdefault("llm_calls_total", 0)
+    m.setdefault("tokens_in_total", 0)
+    m.setdefault("tokens_out_total", 0)
+    m.setdefault("llm_latency_ms_sum", 0.0)
+    m.setdefault("context_tokens_est_max", 0)
+    # 快取
+    m.setdefault("cache_hits", 0)
+    # Judge LLM
+    m.setdefault("judge_triggered", False)
+    m.setdefault("judge_factual_grounding", None)
+    m.setdefault("judge_completeness", None)
+    m.setdefault("judge_coherence", None)
+    m.setdefault("judge_critique", None)
+    # Self-eval（各 agent）
+    m.setdefault("self_eval_confidence_me", None)
+    m.setdefault("self_eval_confidence_ds", None)
+    m.setdefault("self_eval_confidence_de", None)
+    m.setdefault("self_eval_completeness_me", None)
+    m.setdefault("self_eval_completeness_ds", None)
+    # System prompt token 估算
+    m.setdefault("prompt_tokens_est_supervisor", None)
+    m.setdefault("prompt_tokens_est_me", None)
+    m.setdefault("prompt_tokens_est_ds", None)
+    m.setdefault("prompt_tokens_est_de", None)
+
     return m
 
 
@@ -109,6 +136,18 @@ def update_me_citation_metrics(state: dict, answer_text: str):
     m["me_citation_coverage"] = round(covered / total, 3) if total > 0 else 0.0
     m["me_claims_count"] = total
     m["me_uncited_claims"] = total - covered
+
+
+def note_judge_result(state: dict, score) -> None:
+    """Write a JudgeScore into state["metrics"]. score may be None (judge failed)."""
+    if score is None:
+        return
+    m = _ensure_metrics(state)
+    m["judge_triggered"] = True
+    m["judge_factual_grounding"] = score.factual_grounding
+    m["judge_completeness"] = score.completeness
+    m["judge_coherence"] = score.coherence
+    m["judge_critique"] = score.critique
 
 
 # --- 實驗收尾與評分 ---

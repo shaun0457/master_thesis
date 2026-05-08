@@ -67,11 +67,19 @@ def create_me_executor(mode: str, tools: List, system_prompt: Optional[str] = No
     return prompt | llm.bind_tools(tools)
 
 def ME_node(state: AgentState, executor):
+    import time
+    from llm_harness import SelfEvaluator
+    from metrics import _ensure_metrics
     print("\n[Node] >>> MachineExpert")
     snippet = _last_human_snippet(state)
     print("[ME][In] last human: %r" % snippet)
 
+    t0 = time.time() * 1000
     res = executor.invoke(state)
+    latency = time.time() * 1000 - t0
+    m = _ensure_metrics(state)
+    m["llm_calls_total"] = m.get("llm_calls_total", 0) + 1
+    m["llm_latency_ms_sum"] = m.get("llm_latency_ms_sum", 0.0) + latency
 
     # 兼容：有些 executor 直接回 dict，有些回單一 AIMessage
     msgs: list[BaseMessage] = []
@@ -84,10 +92,12 @@ def ME_node(state: AgentState, executor):
 
     # 掃描所有 AIMessage，把 Thought 與 ToolCalls 印出來
     found_any = False
+    last_ai_text = ""
     for msg in msgs:
         if isinstance(msg, AIMessage):
             found_any = True
             text = _extract_text_content(msg)
+            last_ai_text = text or last_ai_text
             print(f"[ME][Thought] {text if text else '(empty)'}")
             tcs = getattr(msg, "tool_calls", None) or []
             if tcs:
@@ -97,6 +107,14 @@ def ME_node(state: AgentState, executor):
                 print("[ME][Plan tools] (none)")
     if not found_any:
         print("[ME][DEBUG] no AIMessage found to print Thought")
+
+    # SelfEvaluator（非阻塞）
+    if last_ai_text and not getattr(executor, "_skip_self_eval", False):
+        try:
+            from common import llm as _llm
+            SelfEvaluator().evaluate(_llm, last_ai_text, "ME", state)
+        except Exception:
+            pass
 
     # 回寫訊息到狀態
     return {"messages": msgs or [res] if isinstance(res, BaseMessage) else []}

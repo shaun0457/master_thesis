@@ -67,12 +67,14 @@ def _has_min_evidence(state: dict) -> bool:
 # ----- 节点定义 -----
 
 def supervisor_node(state: Dict[str, Any]):
+    import time
+    from metrics import _ensure_metrics
     print("\n[Node] >>> Supervisor")
     _ensure_init(state)
 
-    # ▼▼▼ 核心修改：使用 prompt_builder 获取 Prompt ▼▼▼
-    supervisor_system_prompt = get_system_prompt("Supervisor")
-    # ▲▲▲ 核心修改 ▲▲▲
+    # phase-aware system prompt
+    phase = state.get("phase", "default")
+    supervisor_system_prompt = get_system_prompt("Supervisor", phase=phase)
 
     prompt = ChatPromptTemplate.from_messages([
         ("system", supervisor_system_prompt),
@@ -82,7 +84,12 @@ def supervisor_node(state: Dict[str, Any]):
     chain = prompt | llm.bind_tools(get_supervisor_tools())
 
     print("[Supervisor] Calling LLM...")
+    t0 = time.time() * 1000
     out = chain.invoke({"messages": msgs})
+    latency = time.time() * 1000 - t0
+    m = _ensure_metrics(state)
+    m["llm_calls_total"] = m.get("llm_calls_total", 0) + 1
+    m["llm_latency_ms_sum"] = m.get("llm_latency_ms_sum", 0.0) + latency
     print(f"[Supervisor] LLM call returned. Action: {getattr(out, 'tool_calls', 'No action / Clarification')}")
 
     return {"messages": [out]}
@@ -163,6 +170,19 @@ def build_team_graph():
                     return END
             else:
                 print("[Edge] 'final_answer' called with evidence. Ending.")
+                # trigger judge LLM
+                try:
+                    from judge import JudgeLLM
+                    from metrics import note_judge_result
+                    answer_text = tcs[0].get("args", {}).get("answer", "")
+                    score = JudgeLLM().judge_sync(llm, state, answer_text)
+                    note_judge_result(state, score)
+                    if score:
+                        print(f"[Judge] Factual:{score.factual_grounding}/3  "
+                              f"Complete:{score.completeness}/3  "
+                              f"Coherent:{score.coherence}/3")
+                except Exception as _je:
+                    print(f"[Judge] skipped: {_je}")
                 return END
 
         # 检查2：一次调用多个工具 (假设我们期望只有一个)

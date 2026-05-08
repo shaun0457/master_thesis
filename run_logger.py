@@ -1,8 +1,11 @@
 # # run_logger.py
+import logging
 import os, json, time, hashlib, atexit, uuid, traceback
 from contextlib import contextmanager
 from typing import Any, Dict, Optional, List
 from common import ensure_run_id
+
+_log = logging.getLogger(__name__)
 
 
 
@@ -162,6 +165,19 @@ class RunLogger:
             t1=_now_ms(); self.data["node_events"].append({"agent":agent,"node":agent,"event":"exit","ts_ms":t1,"task_id":task_id,"llm_latency_ms":t1-t0})
 
     @contextmanager
+    def llm_call(self, agent: str, task_id: Optional[str] = None):
+        """Context manager that records LLM call latency in node_events."""
+        t0 = _now_ms()
+        try:
+            yield
+        finally:
+            latency = _now_ms() - t0
+            self.data["node_events"].append({
+                "agent": agent, "node": agent, "event": "llm_call",
+                "ts_ms": t0, "task_id": task_id, "llm_latency_ms": latency,
+            })
+
+    @contextmanager
     def tool_exec(self, agent:str, tool:str, task_id:Optional[str]=None, args:Optional[Dict]=None, section:Optional[str]=None):
         t0=_now_ms(); ok=None
         class _Ctx:
@@ -199,9 +215,33 @@ class RunLogger:
 
     def flush(self):
         try:
-            out_dir=f"/mnt/data/runs/{self.run_id}"; os.makedirs(out_dir, exist_ok=True)
-            with open(self.out_json_path, "w", encoding="utf-8") as f: json.dump(self.data, f, ensure_ascii=False, indent=2)
-        except Exception: pass
+            out_dir = f"/mnt/data/runs/{self.run_id}"
+            os.makedirs(out_dir, exist_ok=True)
+            with open(self.out_json_path, "w", encoding="utf-8") as f:
+                json.dump(self.data, f, ensure_ascii=False, indent=2)
+            # Write summary.json with key harness metrics for quick inspection
+            m = self.data.get("metrics", {})
+            summary = {
+                "run_id": self.run_id,
+                "llm_calls_total": m.get("llm_calls_total", 0),
+                "tokens_in_total": m.get("tokens_in_total", 0),
+                "tokens_out_total": m.get("tokens_out_total", 0),
+                "llm_latency_ms_sum": m.get("llm_latency_ms_sum", 0.0),
+                "cache_hits": m.get("cache_hits", 0),
+                "judge_triggered": m.get("judge_triggered", False),
+                "judge_factual_grounding": m.get("judge_factual_grounding"),
+                "judge_completeness": m.get("judge_completeness"),
+                "judge_coherence": m.get("judge_coherence"),
+                "ds_verdict": m.get("ds_verdict"),
+                "me_citation_coverage": m.get("me_citation_coverage"),
+                "duration_ms": m.get("duration_ms"),
+                "written_at_ms": _now_ms(),
+            }
+            summary_path = os.path.join(out_dir, "summary.json")
+            with open(summary_path, "w", encoding="utf-8") as f:
+                json.dump(summary, f, ensure_ascii=False, indent=2)
+        except Exception:
+            pass
 
 # ========= Run 級 =========
 def emit_run_meta(state: Optional[Dict[str, Any]] = None, run_id: Optional[str] = None, **meta) -> None:
@@ -234,7 +274,9 @@ def emit_event(e: Dict[str, Any], *, state: Optional[Dict[str, Any]] = None, run
     e.setdefault("timestamp", _now_ms())
     e.setdefault("turn_index", e.get("turn_index", None))
     e.setdefault("channel", e.get("channel", "team"))
-    assert "event_type" in e and "agent" in e, "event_type/agent 必填"
+    if "event_type" not in e or "agent" not in e:
+        _log.warning("emit_event: missing event_type or agent — event dropped: %s", e)
+        return
     _append_jsonl(_path_events(state, run_id), e)
 
 def log_message(*, agent: str, content_text: str, topic_id: Optional[str] = None,

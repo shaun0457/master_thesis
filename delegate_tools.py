@@ -941,11 +941,36 @@ def _run_subgraph(agent: str,
 def _summarize_out(agent: str, out_state: Dict[str, Any], max_items: int = 4) -> str:
     """
     更穩健的摘要抽取順序：
+      0) Pydantic primary path：從最後一條 AIMessage 嘗試解析 MEReport/DSReport/DEReport
       1) 優先抓 synth 工具（synthesize_and_cite）的 cited_answer
       2) 再抓本輪寫進黑板的事實（bb_write_fact）做成要點
       3) 最後退：從已讀 chunk 提取1-2條線索（doc_id p.#）
       4) 都沒有 → 給非空的 fallback 字串
     """
+    # (0) Pydantic primary path
+    try:
+        from structured_outputs import MEReport, DSReport, DEReport
+        import re as _re
+        _agent_upper = agent.upper()
+        _report_cls = {"ME": MEReport, "DS": DSReport, "DE": DEReport}.get(_agent_upper)
+        if _report_cls:
+            for msg in reversed(out_state.get("messages", [])):
+                raw = getattr(msg, "content", "") or ""
+                if not raw:
+                    continue
+                _json_str = re.sub(r"```(?:json)?", "", raw).strip()
+                _m = re.search(r"\{.*\}", _json_str, re.DOTALL)
+                if _m:
+                    try:
+                        report = _report_cls.model_validate_json(_m.group(0))
+                        summary_field = getattr(report, "answer", None) or getattr(report, "summary", None) or ""
+                        if len(summary_field) >= 5:
+                            return summary_field.strip()
+                    except Exception:
+                        pass
+    except Exception:
+        pass
+
     lines: List[str] = []
 
     # (1) messages 裡找 synth 工具輸出

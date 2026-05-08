@@ -223,6 +223,17 @@ def main():
         print(f"[DEBUG] RUN_ID={state['run_id']}  TASK_ID={state['task_id']}  "
               f"SEED={state['seed']}  PROMPT={state['prompt_condition']}")
 
+        # 顯示 system prompt token 估算
+        try:
+            from context_assembler import DynamicContextAssembler
+            _asm = DynamicContextAssembler()
+            for _ag in ("Supervisor", "ME", "DE", "DS"):
+                _sp = _asm.assemble_system_prompt(_ag)
+                _tok = len(_sp) // 4
+                print(f"[System prompt tokens] {_ag}: ~{_tok}")
+        except Exception:
+            pass
+
         begin_run(
             state,
             task_id=os.getenv("TASK_ID", "Unknown"),
@@ -326,6 +337,22 @@ def main():
                             # 在 while 迴圈裡，每回合 break 前：_print_last(state) 之後加
                             _print_recent_tool_events(state, limit=12)
                             _print_blackboard_summary(state)
+                            # usage summary
+                            try:
+                                m = state.get("metrics", {})
+                                tokens_in = m.get("tokens_in_total", 0)
+                                tokens_out = m.get("tokens_out_total", 0)
+                                latency = m.get("llm_latency_ms_sum", 0.0)
+                                cache_hits = m.get("cache_hits", 0)
+                                print(f"[Usage] tokens_in={tokens_in} tokens_out={tokens_out} "
+                                      f"llm_latency={latency:.0f}ms cache_hits={cache_hits}")
+                                if m.get("judge_triggered"):
+                                    fg = m.get("judge_factual_grounding", "?")
+                                    cp = m.get("judge_completeness", "?")
+                                    co = m.get("judge_coherence", "?")
+                                    print(f"[Judge] Factual:{fg}/3  Complete:{cp}/3  Coherent:{co}/3")
+                            except Exception:
+                                pass
                             _save_session(session_id, state, tag=f"turn_{state['turn_counter']}_end")
                             break
 
