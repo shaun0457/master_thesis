@@ -1,5 +1,7 @@
 # 工業製程分析多代理系統
 
+[English](./README.md) | 繁體中文
+
 這是一個以 [LangGraph](https://github.com/langchain-ai/langgraph) 為核心構建的研究型**多代理系統（Multi-Agent System, MAS）**，用於智能分析田納西-伊士曼製程（Tennessee Eastman Process, TEP）。TEP 是化工製程控制與故障檢測研究中廣泛採用的標準基準模擬器。
 
 本系統協調一支由多個專業 AI 代理組成的團隊，透過整合 SQL 查詢、檢索增強生成（RAG）與 Python 數據科學工具，協作回答跨領域的複雜製程問題。

@@ -1,5 +1,7 @@
 # Multi-Agent System for Industrial Process Analysis
 
+[繁體中文](./README_zh-TW.md) | English
+
 A research-grade **Multi-Agent System (MAS)** built with [LangGraph](https://github.com/langchain-ai/langgraph) for intelligent analysis of the Tennessee Eastman Process (TEP) — a benchmark chemical plant simulation widely used in fault detection and process control research.
 
 This system orchestrates a team of specialized AI agents that collaborate to answer complex, cross-domain questions about industrial process data, combining SQL querying, retrieval-augmented generation (RAG), and Python-based data science.
