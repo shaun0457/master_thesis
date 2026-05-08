@@ -1,0 +1,9 @@
+Tag,Description,Role,Associated_Control_Loop,Causal_Driver_Tag,Lead_Lag_Time_sec,Regime,Comments
+xmeas_6,Reactor Temperature,Process Measurement,CL-01,xmv_4,4.68,Normal,
+xmeas_6,Reactor Temperature,Process Measurement,CL-01,xmv_4,4.52,High-Throughput,
+xmv_4,Reactor Cooling Water Flow,Manipulated Variable,CL-01,,,Normal,Governs reactor heat removal with elasticity of -0.03 +/- 0.04.
+xmv_4,Reactor Cooling Water Flow,Manipulated Variable,CL-01,,,High-Throughput,Governs reactor heat removal with elasticity of -0.03 +/- 0.04.
+xmeas_9,Separator Pressure,Process Measurement,CL-04,xmv_7,2.96,Normal,
+xmeas_9,Separator Pressure,Process Measurement,CL-04,xmv_7,3.22,High-Throughput,
+xmv_7,Separator Vapor Flow,Manipulated Variable,CL-04,,,Normal,
+xmv_7,Separator Vapor Flow,Manipulated Variable,CL-04,,,High-Throughput,

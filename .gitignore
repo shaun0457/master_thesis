@@ -1,0 +1,47 @@
+# Environment & Credentials
+.env
+*.json
+!package.json
+
+# Databases (large files)
+*.db
+*.sqlite
+*.sqlite3
+
+# Large data directories
+TEP_data/
+datasets/
+
+# RAG index cache
+.rag_index/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg
+.venv/
+venv/
+env/
+.Python
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# Gemini / AI tool configs
+.gemini/
+
+# Runtime logs & outputs
+run_logs/
+interactive_logs/
+figures/
+ouput.txt
+tree.txt
