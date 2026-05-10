@@ -1,13 +1,17 @@
 # PROGRESS.md — 重構進度追蹤
 
-## 目前狀態：Step 6 完成 ✅ — 等待 Regression Gate
+## 目前狀態：Production Upgrade Tier 1 進行中 — T1-P1 完成 ✅
 
 ## 🔴 下一個動作（新 session 直接從這裡開始）
 
 ```
-Step 6 全部完成。
-下一步：設定 GOOGLE_API_KEY → python chat_cli.py 跑 queries/Q1-Q3.txt
-記錄 Regression Gate 三個指標到 PROGRESS.md 底部
+Production Upgrade Tier 1 繼續。
+完整計劃：C:\Users\chengting\.claude\plans\code-2025-6-2026agentic-code-prompt-eng-expressive-island.md
+
+下一個 item：T1-P2 — delegate_tools.py 加法式 metrics merge
+  先建：tests/integration/eval_t1p2.py
+  實作：_merge_metrics() helper，替換所有 state["metrics"].update(...)
+  驗收：parent llm_calls_total = supervisor + child 的總和（不覆蓋）
 ```
 
 **接線順序（依賴關係）：**
@@ -105,6 +109,33 @@ pytest tests/ → 63 passed (2026-05-08)
   test_judge.py                9/9
   test_llm_cache.py           14/14
 ```
+
+---
+
+---
+
+## Production Upgrade Tier 1
+
+### T1-P1：`harness_callback.py` ✅ 2026-05-09
+- [x] `harness_callback.py` — 新建 HarnessCallback（on_llm_start + on_llm_end）
+- [x] `tests/integration/eval_t1p1.py` — integration evaluator（需真實 API key）
+- [x] `me_workflow.py` — 移除手工計時，加 config={"callbacks": [HarnessCallback(state, "ME")]}
+- [x] `de_workflow.py` — 移除手工計時，_run 接受 config，加 HarnessCallback
+- [x] `ds_workflow_s2.py` — 移除手工計時，加 config={"callbacks": [HarnessCallback(state, "DS")]}
+- [x] pytest regression：63 passed（無退步）
+
+### T1-P2：`delegate_tools.py` — 加法式 metrics merge（待完成）
+- [ ] `tests/integration/eval_t1p2.py` — evaluator
+- [ ] `_merge_metrics()` helper
+- [ ] 替換 `_invoke_stage1()` 的 `state["metrics"].update(...)`
+
+### T1-P3：`supervisor_workflow.py` — PostAnswer node（待完成）
+- [ ] `post_answer_node` 函數
+- [ ] `_cond()` 改純路由，不執行 I/O
+- [ ] `build_team_graph()` 加 PostAnswer node 和 edge
+
+### T1-P4：`delegate_tools.py` — Wire `compress_messages`（待完成）
+- [ ] `_invoke_stage1()` 加 compress_messages 暫行版
 
 ---
 

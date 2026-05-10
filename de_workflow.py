@@ -64,11 +64,11 @@ def create_de_executor(mode: str, tools_for_agent: List, system_prompt: Optional
 
     bound = llm.bind_tools(tools_for_agent)
 
-    def _run(inp: Dict[str, Any]):
+    def _run(inp: Dict[str, Any], config=None):
         msgs = inp.get("messages") or []
         # 直接把【最终决定好】的 SystemMessage 放到最前
         full = [SystemMessage(content=final_sys_text), *msgs]
-        return bound.invoke(full)
+        return bound.invoke(full, config=config)
 
     return RunnableLambda(_run)
 
@@ -76,18 +76,15 @@ def create_de_executor(mode: str, tools_for_agent: List, system_prompt: Optional
 # 2) DE 節點：只負責讓 LLM 產生下一步（Think/Act）
 # -----------------------------
 def de_node(state: AgentState, agent_executor):
-    import time
-    from metrics import _ensure_metrics
     print("\n[Node] >>> DataEngineer")
     snippet = _last_human_snippet(state)
     print("[DE][In] last human: %r" % snippet)
 
-    t0 = time.time() * 1000
-    res = agent_executor.invoke({"messages": state["messages"]})
-    latency = time.time() * 1000 - t0
-    m = _ensure_metrics(state)
-    m["llm_calls_total"] = m.get("llm_calls_total", 0) + 1
-    m["llm_latency_ms_sum"] = m.get("llm_latency_ms_sum", 0.0) + latency
+    from harness_callback import HarnessCallback
+    res = agent_executor.invoke(
+        {"messages": state["messages"]},
+        config={"callbacks": [HarnessCallback(state, "DE")]},
+    )
 
     # 兼容多種回傳型態
     msgs: list[BaseMessage] = []

@@ -63,19 +63,13 @@ def create_ds_executor(mode: str, tools: List, system_prompt: Optional[str] = No
 
 # --- 通用节点 (直接从旧文件复制) ---
 def ds_node(state: Dict[str, Any], executor):
-    import time
     from llm_harness import SelfEvaluator
-    from metrics import _ensure_metrics
     print("\n[Node] >>> DataScientist")
     snippet = _last_human_snippet(state)
     print("[DS][In] last human: %r" % snippet)
 
-    t0 = time.time() * 1000
-    res = executor.invoke(state)
-    latency = time.time() * 1000 - t0
-    m = _ensure_metrics(state)
-    m["llm_calls_total"] = m.get("llm_calls_total", 0) + 1
-    m["llm_latency_ms_sum"] = m.get("llm_latency_ms_sum", 0.0) + latency
+    from harness_callback import HarnessCallback
+    res = executor.invoke(state, config={"callbacks": [HarnessCallback(state, "DS")]})
 
     msgs: list[BaseMessage] = []
     if isinstance(res, dict) and "messages" in res:

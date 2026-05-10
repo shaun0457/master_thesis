@@ -67,19 +67,13 @@ def create_me_executor(mode: str, tools: List, system_prompt: Optional[str] = No
     return prompt | llm.bind_tools(tools)
 
 def ME_node(state: AgentState, executor):
-    import time
     from llm_harness import SelfEvaluator
-    from metrics import _ensure_metrics
     print("\n[Node] >>> MachineExpert")
     snippet = _last_human_snippet(state)
     print("[ME][In] last human: %r" % snippet)
 
-    t0 = time.time() * 1000
-    res = executor.invoke(state)
-    latency = time.time() * 1000 - t0
-    m = _ensure_metrics(state)
-    m["llm_calls_total"] = m.get("llm_calls_total", 0) + 1
-    m["llm_latency_ms_sum"] = m.get("llm_latency_ms_sum", 0.0) + latency
+    from harness_callback import HarnessCallback
+    res = executor.invoke(state, config={"callbacks": [HarnessCallback(state, "ME")]})
 
     # 兼容：有些 executor 直接回 dict，有些回單一 AIMessage
     msgs: list[BaseMessage] = []
