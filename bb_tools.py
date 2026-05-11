@@ -56,6 +56,23 @@ def _mk_artifact_id(seed: str, prefix: str = "fx") -> str:
     h = hashlib.sha256(seed.encode("utf-8")).hexdigest()[:16]
     return f"{prefix}_{h}"
 
+
+def _fact_entry(
+    claim: str,
+    agent: str = "unknown",
+    source_tool: str = "unknown",
+    confidence: float = 1.0,
+    turn: Optional[int] = None,
+) -> Dict[str, Any]:
+    """Canonical provenance dict for a blackboard fact."""
+    return {
+        "claim": claim,
+        "agent": agent,
+        "source_tool": source_tool,
+        "confidence": confidence,
+        "turn": turn,
+    }
+
 # ========= core programmatic API (供代理/程式碼呼叫) =========
 
 # def bb_write(*, run_id: Optional[str],
@@ -686,11 +703,25 @@ def bb_add_citations(run_id: Optional[str], citations: List[Dict[str, Any]]) -> 
             seen.add(key)
     _save(rid, reg)
 
-def bb_add_facts(run_id: Optional[str], facts: List[Dict[str, Any]]) -> None:
-    """批次加入 facts；若你改走 bb_write（有 artifact_id），這個就只保留相容性使用。"""
+def bb_add_facts(
+    run_id: Optional[str],
+    facts: List[Any],
+    agent: str = "unknown",
+    source_tool: str = "unknown",
+) -> None:
+    """批次加入 facts，自動正規化為 provenance dict 格式。"""
     rid = _resolve_run_id(run_id)
     reg = _load(rid)
     reg.setdefault("facts", [])
     for f in (facts or []):
-        reg["facts"].append(f)
+        if isinstance(f, str):
+            entry = _fact_entry(claim=f, agent=agent, source_tool=source_tool)
+        elif isinstance(f, dict) and "claim" in f:
+            entry = f  # already provenance format
+        elif isinstance(f, dict):
+            claim = str(f.get("text") or f.get("content") or f)
+            entry = _fact_entry(claim=claim, agent=agent, source_tool=source_tool)
+        else:
+            entry = _fact_entry(claim=str(f), agent=agent, source_tool=source_tool)
+        reg["facts"].append(entry)
     _save(rid, reg)

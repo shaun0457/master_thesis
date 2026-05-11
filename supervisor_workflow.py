@@ -83,13 +83,15 @@ def post_answer_node(state: Dict[str, Any]):
         return {}
     try:
         from judge import JudgeLLM
-        from metrics import note_judge_result
+        from metrics import note_judge_result, compute_evidence_utilization
         score = JudgeLLM().judge_sync(llm, state, answer_text)
         note_judge_result(state, score)
         if score:
             print(f"[Judge] Factual:{score.factual_grounding}/3  "
                   f"Complete:{score.completeness}/3  "
                   f"Coherent:{score.coherence}/3")
+        eu = compute_evidence_utilization(state, answer_text)
+        print(f"[Evidence] utilization={eu:.2f}")
     except Exception as _je:
         print(f"[Judge] skipped: {_je}")
     return {}

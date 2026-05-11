@@ -275,7 +275,7 @@ def Tool_node(state: AgentState, tool_map: Dict[str, Any]):
             if cits:
                 bb_add_citations(run_id, cits)
             if facts:
-                bb_add_facts(run_id, facts)
+                bb_add_facts(run_id, facts, agent="ME", source_tool="synthesize_and_cite")
         except Exception:
             pass
 

@@ -150,6 +150,37 @@ def note_judge_result(state: dict, score) -> None:
     m["judge_critique"] = score.critique
 
 
+_STOP_WORDS = {
+    "the", "a", "an", "is", "in", "of", "to", "and", "or", "for",
+    "was", "were", "that", "this", "it", "with", "has", "have", "be",
+}
+
+
+def compute_evidence_utilization(state: dict, answer_text: str) -> float:
+    """Fraction of blackboard facts whose keywords appear in answer_text.
+
+    Uses simple keyword matching with stop-word filtering so that common
+    words like 'the' do not inflate the score.
+    """
+    bb = state.get("blackboard", {}) if isinstance(state.get("blackboard"), dict) else {}
+    facts = bb.get("facts", [])
+    if not facts:
+        return 0.0
+    answer_lower = answer_text.lower()
+
+    def _claim_text(f) -> str:
+        return f.get("claim", str(f)) if isinstance(f, dict) else str(f)
+
+    def _keywords(text: str):
+        words = [w.lower() for w in text.split() if w.lower() not in _STOP_WORDS and len(w) > 2]
+        return list(dict.fromkeys(words))[:5]  # deduplicated, order-preserved
+
+    hits = sum(1 for f in facts if any(kw in answer_lower for kw in _keywords(_claim_text(f))))
+    score = hits / len(facts)
+    _ensure_metrics(state)["evidence_utilization"] = score
+    return score
+
+
 # --- 實驗收尾與評分 ---
 def finalize_metrics(state: dict, ds_verdict: str, ds_reason: Optional[str] = None,
                      final_answer_obj: Optional[Dict] = None):

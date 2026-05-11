@@ -156,16 +156,18 @@ pytest tests/ → 63 passed (2026-05-08)
 - [x] `supervisor_workflow.py` supervisor_node：state.setdefault("phase", "initial")
 - [x] pytest regression：63 passed（無退步）
 
-### T2-P6：Blackboard Provenance（待完成）
-- [ ] `tests/integration/eval_t2p6.py`
-- [ ] `bb_tools.py` write_to_blackboard()：facts 改 provenance dict
-- [ ] me/de/ds workflow blackboard 寫入點更新
-- [ ] supervisor_workflow._has_min_evidence() / judge.py：讀取 claim 欄位
+### T2-P6：Blackboard Provenance ✅ 2026-05-09
+- [x] `tests/integration/eval_t2p6.py` — 4 tests
+- [x] `bb_tools.py` 加 `_fact_entry()` helper
+- [x] `bb_tools.py` `bb_add_facts` 自動正規化（str/dict → provenance dict）
+- [x] `me_workflow.py` bb_add_facts 呼叫加上 agent="ME", source_tool="synthesize_and_cite"
+- [x] pytest regression：63 passed（無退步）
 
-### T2-P7：evidence_utilization 指標（待完成，依賴 T2-P6）
-- [ ] `tests/integration/eval_t2p7.py`
-- [ ] `metrics.py` compute_evidence_utilization()
-- [ ] `supervisor_workflow.py` post_answer_node 呼叫
+### T2-P7：evidence_utilization 指標 ✅ 2026-05-09
+- [x] `tests/integration/eval_t2p7.py` — 5 tests（含 stop words 防虛高）
+- [x] `metrics.py` `compute_evidence_utilization()` + `_STOP_WORDS`
+- [x] `supervisor_workflow.py` post_answer_node 呼叫並印 [Evidence] utilization
+- [x] pytest regression：63 passed（無退步）
 
 ### T2-P9：Blackboard Index Injection（待完成，依賴 T2-P6）
 - [ ] `delegate_tools.py` _format_bb_index() + anchor_msg 方案（取代 T1-P4 暫行版）
