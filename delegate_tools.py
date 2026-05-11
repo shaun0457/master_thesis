@@ -686,7 +686,10 @@ def _invoke_stage1(agent: str, intro_msgs: List[HumanMessage], extra_tools: List
         os.environ["DATABASE_URL"] = state["db_url"]
 
     # === 關鍵：訊息順序要讓「最後一則」是子代理要接的 Human 指令 ===
-    msgs = state.get("messages", []) + intro_msgs
+    from context_assembler import DynamicContextAssembler as _DCA
+    _ca = _DCA()
+    raw_msgs = state.get("messages", []) + intro_msgs
+    msgs = _ca.compress_messages(raw_msgs, target_tokens=8000)
 
     # 保險：確保最後一則真的是 HumanMessage（有些路徑可能仍以 AIMessage 結尾）
     if not msgs or not isinstance(msgs[-1], HumanMessage):

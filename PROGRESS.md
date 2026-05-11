@@ -5,13 +5,16 @@
 ## 🔴 下一個動作（新 session 直接從這裡開始）
 
 ```
-Production Upgrade Tier 1 繼續。
+Production Upgrade Tier 2 開始（Tier 1 全部完成 ✅）。
 完整計劃：C:\Users\chengting\.claude\plans\code-2025-6-2026agentic-code-prompt-eng-expressive-island.md
 
-下一個 item：T1-P2 — delegate_tools.py 加法式 metrics merge
-  先建：tests/integration/eval_t1p2.py
-  實作：_merge_metrics() helper，替換所有 state["metrics"].update(...)
-  驗收：parent llm_calls_total = supervisor + child 的總和（不覆蓋）
+下一個 item：T2-P5 — Phase 驅動（me_workflow + de_workflow + supervisor）
+  先建：tests/integration/eval_t2p5.py
+  實作：
+    - me_workflow.py Tool_node：synthesize_and_cite 後設 state["phase"] = "ME:synthesize"
+    - de_workflow.py tool_node：deliver_dataframe 後設 state["phase"] = "DE:deliver"
+    - supervisor_workflow.py supervisor_node：state.setdefault("phase", "initial")
+  驗收：state["phase"] 在對應工具完成後不再是 "default"
 ```
 
 **接線順序（依賴關係）：**
@@ -137,8 +140,11 @@ pytest tests/ → 63 passed (2026-05-08)
 - [x] `build_team_graph()` 加 PostAnswer node + edge(PostAnswer→END)
 - [x] pytest regression：63 passed（無退步）
 
-### T1-P4：`delegate_tools.py` — Wire `compress_messages`（待完成）
-- [ ] `_invoke_stage1()` 加 compress_messages 暫行版
+### T1-P4：`delegate_tools.py` — Wire `compress_messages` ✅ 2026-05-09
+- [x] `tests/integration/eval_t1p4.py` — evaluator
+- [x] `_invoke_stage1()` 加 compress_messages 暫行版（target_tokens=8000）
+- [x] T2-P9 會在同一位置換成 anchor 方案（bb_index + 歷史壓縮）
+- [x] pytest regression：63 passed（無退步）
 
 ---
 
