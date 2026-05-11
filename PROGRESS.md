@@ -130,10 +130,12 @@ pytest tests/ → 63 passed (2026-05-08)
 - [x] 替換 `_invoke_stage1()` 的 `state["metrics"].update(...)` → `_merge_metrics(...)`
 - [x] pytest regression：63 passed（無退步）
 
-### T1-P3：`supervisor_workflow.py` — PostAnswer node（待完成）
-- [ ] `post_answer_node` 函數
-- [ ] `_cond()` 改純路由，不執行 I/O
-- [ ] `build_team_graph()` 加 PostAnswer node 和 edge
+### T1-P3：`supervisor_workflow.py` — PostAnswer node ✅ 2026-05-09
+- [x] `post_answer_node` 函數（從 messages 找最後一個 final_answer tool_call）
+- [x] `_cond()` 改純路由：final_answer + evidence → "PostAnswer"（不再執行 Judge I/O）
+- [x] `supervisor_node` 手工計時移除，改用 HarnessCallback
+- [x] `build_team_graph()` 加 PostAnswer node + edge(PostAnswer→END)
+- [x] pytest regression：63 passed（無退步）
 
 ### T1-P4：`delegate_tools.py` — Wire `compress_messages`（待完成）
 - [ ] `_invoke_stage1()` 加 compress_messages 暫行版

@@ -66,9 +66,37 @@ def _has_min_evidence(state: dict) -> bool:
 
 # ----- 节点定义 -----
 
+def post_answer_node(state: Dict[str, Any]):
+    """Evaluate final_answer quality after the graph exits the Supervisor loop."""
+    msgs = state.get("messages", [])
+    answer_text = ""
+    for m in reversed(msgs):
+        if isinstance(m, AIMessage):
+            tcs = getattr(m, "tool_calls", None) or []
+            for tc in tcs:
+                if tc.get("name") == "final_answer":
+                    answer_text = tc.get("args", {}).get("answer", "")
+                    break
+        if answer_text:
+            break
+    if not answer_text:
+        return {}
+    try:
+        from judge import JudgeLLM
+        from metrics import note_judge_result
+        score = JudgeLLM().judge_sync(llm, state, answer_text)
+        note_judge_result(state, score)
+        if score:
+            print(f"[Judge] Factual:{score.factual_grounding}/3  "
+                  f"Complete:{score.completeness}/3  "
+                  f"Coherent:{score.coherence}/3")
+    except Exception as _je:
+        print(f"[Judge] skipped: {_je}")
+    return {}
+
+
 def supervisor_node(state: Dict[str, Any]):
-    import time
-    from metrics import _ensure_metrics
+    from harness_callback import HarnessCallback
     print("\n[Node] >>> Supervisor")
     _ensure_init(state)
 
@@ -84,12 +112,10 @@ def supervisor_node(state: Dict[str, Any]):
     chain = prompt | llm.bind_tools(get_supervisor_tools())
 
     print("[Supervisor] Calling LLM...")
-    t0 = time.time() * 1000
-    out = chain.invoke({"messages": msgs})
-    latency = time.time() * 1000 - t0
-    m = _ensure_metrics(state)
-    m["llm_calls_total"] = m.get("llm_calls_total", 0) + 1
-    m["llm_latency_ms_sum"] = m.get("llm_latency_ms_sum", 0.0) + latency
+    out = chain.invoke(
+        {"messages": msgs},
+        config={"callbacks": [HarnessCallback(state, "Supervisor")]},
+    )
     print(f"[Supervisor] LLM call returned. Action: {getattr(out, 'tool_calls', 'No action / Clarification')}")
 
     return {"messages": [out]}
@@ -124,7 +150,9 @@ def build_team_graph():
     g.add_node("Supervisor", supervisor_node)
     g.add_node("Router", router_node)
     g.add_node("Correction", correction_node)
+    g.add_node("PostAnswer", post_answer_node)
     g.set_entry_point("Supervisor")
+    g.add_edge("PostAnswer", END)
 
     def _cond(state: Dict[str, Any]):
         """
@@ -169,21 +197,8 @@ def build_team_graph():
                     print("[Edge] VIOLATION (free): 'final_answer' without evidence. Allowing.")
                     return END
             else:
-                print("[Edge] 'final_answer' called with evidence. Ending.")
-                # trigger judge LLM
-                try:
-                    from judge import JudgeLLM
-                    from metrics import note_judge_result
-                    answer_text = tcs[0].get("args", {}).get("answer", "")
-                    score = JudgeLLM().judge_sync(llm, state, answer_text)
-                    note_judge_result(state, score)
-                    if score:
-                        print(f"[Judge] Factual:{score.factual_grounding}/3  "
-                              f"Complete:{score.completeness}/3  "
-                              f"Coherent:{score.coherence}/3")
-                except Exception as _je:
-                    print(f"[Judge] skipped: {_je}")
-                return END
+                print("[Edge] 'final_answer' called with evidence. Routing to PostAnswer.")
+                return "PostAnswer"
 
         # 检查2：一次调用多个工具 (假设我们期望只有一个)
         if tcs and len(tcs) > 1:
@@ -211,7 +226,8 @@ def build_team_graph():
         return END
 
     g.add_conditional_edges("Supervisor", _cond,
-                            {END: END, "Router": "Router", "Correction": "Correction", "Supervisor": "Supervisor"})
+                            {END: END, "Router": "Router", "Correction": "Correction",
+                             "Supervisor": "Supervisor", "PostAnswer": "PostAnswer"})
     g.add_edge("Router", "Supervisor")
     g.add_edge("Correction", "Supervisor")
 
