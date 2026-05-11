@@ -17,6 +17,21 @@ from run_logger import emit_bb_write, emit_bb_read, note_tool_call
 
 POLICY = 'minimal'
 
+_ADDITIVE_METRICS = {
+    "llm_calls_total", "tokens_in_total", "tokens_out_total",
+    "llm_latency_ms_sum", "tool_calls_total", "cache_hits",
+}
+
+
+def _merge_metrics(parent: dict, child: dict) -> dict:
+    """Merge child metrics into parent — additive for numeric counters, overwrite for strings."""
+    for k, v in child.items():
+        if k in _ADDITIVE_METRICS and isinstance(v, (int, float)):
+            parent[k] = parent.get(k, 0) + v
+        else:
+            parent[k] = v
+    return parent
+
 
 def _topic_from(state: Dict[str, Any], explicit: Optional[str] = None) -> str:
     if explicit: return explicit
@@ -919,7 +934,7 @@ def _run_subgraph(agent: str,
     if out_state.get("tool_events"):
         state.setdefault("tool_events", []).extend(out_state["tool_events"])
     if out_state.get("metrics"):
-        state.setdefault("metrics", {}).update(out_state.get("metrics", {}))
+        _merge_metrics(state.setdefault("metrics", {}), out_state.get("metrics", {}))
 
     # console 摘要（不影響流程）
     try:

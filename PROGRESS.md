@@ -124,10 +124,11 @@ pytest tests/ → 63 passed (2026-05-08)
 - [x] `ds_workflow_s2.py` — 移除手工計時，加 config={"callbacks": [HarnessCallback(state, "DS")]}
 - [x] pytest regression：63 passed（無退步）
 
-### T1-P2：`delegate_tools.py` — 加法式 metrics merge（待完成）
-- [ ] `tests/integration/eval_t1p2.py` — evaluator
-- [ ] `_merge_metrics()` helper
-- [ ] 替換 `_invoke_stage1()` 的 `state["metrics"].update(...)`
+### T1-P2：`delegate_tools.py` — 加法式 metrics merge ✅ 2026-05-09
+- [x] `tests/integration/eval_t1p2.py` — evaluator（純邏輯，不需 API key）
+- [x] `_merge_metrics()` helper — 數值加法合併，字串覆蓋
+- [x] 替換 `_invoke_stage1()` 的 `state["metrics"].update(...)` → `_merge_metrics(...)`
+- [x] pytest regression：63 passed（無退步）
 
 ### T1-P3：`supervisor_workflow.py` — PostAnswer node（待完成）
 - [ ] `post_answer_node` 函數
