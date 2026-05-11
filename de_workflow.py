@@ -185,6 +185,9 @@ def tool_node(state: AgentState, tool_map: Dict[str, Any]):
             ToolMessage(content=raw_text, name=name, tool_call_id=tc.get("id", "tool_call"))
         )
 
+        if name == "deliver_dataframe":
+            state["phase"] = "DE:deliver"
+
     return {"messages": new_msgs, "tool_events": state.get("tool_events", [])}
 
 

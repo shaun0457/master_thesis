@@ -178,6 +178,9 @@ def Tool_node(state: AgentState, tool_map: Dict[str, Any]):
             ToolMessage(content=raw_text, name=name, tool_call_id=tc.get("id", name))
         )
 
+        if name == "synthesize_and_cite":
+            state["phase"] = "ME:synthesize"
+
         # 聚合 hits
         obj = raw_obj if isinstance(raw_obj, (dict, list)) else (raw_obj or {})
         if name == "initial_search":
@@ -249,6 +252,7 @@ def Tool_node(state: AgentState, tool_map: Dict[str, Any]):
         tool_messages.append(ToolMessage(
             content=forced_text, name="synthesize_and_cite", tool_call_id="forced_synth"
         ))
+        state["phase"] = "ME:synthesize"
 
         # ✅ 新增：把合成結構化輸出寫入黑板（citations / facts）
         try:

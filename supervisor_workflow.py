@@ -98,6 +98,7 @@ def post_answer_node(state: Dict[str, Any]):
 def supervisor_node(state: Dict[str, Any]):
     from harness_callback import HarnessCallback
     print("\n[Node] >>> Supervisor")
+    state.setdefault("phase", "initial")
     _ensure_init(state)
 
     # phase-aware system prompt

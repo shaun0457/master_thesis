@@ -5,16 +5,19 @@
 ## 🔴 下一個動作（新 session 直接從這裡開始）
 
 ```
-Production Upgrade Tier 2 開始（Tier 1 全部完成 ✅）。
+Production Upgrade Tier 2 繼續（T2-P5 完成 ✅）。
 完整計劃：C:\Users\chengting\.claude\plans\code-2025-6-2026agentic-code-prompt-eng-expressive-island.md
 
-下一個 item：T2-P5 — Phase 驅動（me_workflow + de_workflow + supervisor）
-  先建：tests/integration/eval_t2p5.py
+下一個 item：T2-P6 — Blackboard Provenance（bb_tools + 所有寫入方）
+  先建：tests/integration/eval_t2p6.py
   實作：
-    - me_workflow.py Tool_node：synthesize_and_cite 後設 state["phase"] = "ME:synthesize"
-    - de_workflow.py tool_node：deliver_dataframe 後設 state["phase"] = "DE:deliver"
-    - supervisor_workflow.py supervisor_node：state.setdefault("phase", "initial")
-  驗收：state["phase"] 在對應工具完成後不再是 "default"
+    - bb_tools.py write_to_blackboard()：facts append {"claim":..., "agent":..., "source_tool":..., "confidence":..., "turn":...}
+    - me_workflow.py / de_workflow.py / ds_workflow_s2.py：blackboard 寫入時傳入 agent/tool
+    - supervisor_workflow.py _has_min_evidence()：facts entry 讀取改用 entry.get("claim", str(entry))
+    - judge.py：facts 取 claim 欄位
+  驗收：
+    - eval_t2p6.py：_has_min_evidence 仍運作、compute_evidence_utilization 正常
+    - grep "facts].append" → 無直接 append 字串的漏洞
 ```
 
 **接線順序（依賴關係）：**
@@ -145,6 +148,27 @@ pytest tests/ → 63 passed (2026-05-08)
 - [x] `_invoke_stage1()` 加 compress_messages 暫行版（target_tokens=8000）
 - [x] T2-P9 會在同一位置換成 anchor 方案（bb_index + 歷史壓縮）
 - [x] pytest regression：63 passed（無退步）
+
+### T2-P5：Phase 驅動 ✅ 2026-05-09
+- [x] `tests/integration/eval_t2p5.py` — evaluator（source code 靜態驗證）
+- [x] `me_workflow.py` Tool_node：synthesize_and_cite 後設 state["phase"] = "ME:synthesize"（regular + forced 兩路徑）
+- [x] `de_workflow.py` tool_node：deliver_dataframe 後設 state["phase"] = "DE:deliver"
+- [x] `supervisor_workflow.py` supervisor_node：state.setdefault("phase", "initial")
+- [x] pytest regression：63 passed（無退步）
+
+### T2-P6：Blackboard Provenance（待完成）
+- [ ] `tests/integration/eval_t2p6.py`
+- [ ] `bb_tools.py` write_to_blackboard()：facts 改 provenance dict
+- [ ] me/de/ds workflow blackboard 寫入點更新
+- [ ] supervisor_workflow._has_min_evidence() / judge.py：讀取 claim 欄位
+
+### T2-P7：evidence_utilization 指標（待完成，依賴 T2-P6）
+- [ ] `tests/integration/eval_t2p7.py`
+- [ ] `metrics.py` compute_evidence_utilization()
+- [ ] `supervisor_workflow.py` post_answer_node 呼叫
+
+### T2-P9：Blackboard Index Injection（待完成，依賴 T2-P6）
+- [ ] `delegate_tools.py` _format_bb_index() + anchor_msg 方案（取代 T1-P4 暫行版）
 
 ---
 
