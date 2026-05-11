@@ -5,19 +5,15 @@
 ## 🔴 下一個動作（新 session 直接從這裡開始）
 
 ```
-Production Upgrade Tier 2 繼續（T2-P5 完成 ✅）。
+Production Upgrade Tier 2 + 3（T2-P5/P6/P7/P9 全部完成 ✅）。
 完整計劃：C:\Users\chengting\.claude\plans\code-2025-6-2026agentic-code-prompt-eng-expressive-island.md
 
-下一個 item：T2-P6 — Blackboard Provenance（bb_tools + 所有寫入方）
-  先建：tests/integration/eval_t2p6.py
-  實作：
-    - bb_tools.py write_to_blackboard()：facts append {"claim":..., "agent":..., "source_tool":..., "confidence":..., "turn":...}
-    - me_workflow.py / de_workflow.py / ds_workflow_s2.py：blackboard 寫入時傳入 agent/tool
-    - supervisor_workflow.py _has_min_evidence()：facts entry 讀取改用 entry.get("claim", str(entry))
-    - judge.py：facts 取 claim 欄位
-  驗收：
-    - eval_t2p6.py：_has_min_evidence 仍運作、compute_evidence_utilization 正常
-    - grep "facts].append" → 無直接 append 字串的漏洞
+下一個 item：T2-P8 — DS 程式碼沙箱（ds_tools.py subprocess 隔離）
+  先建：tests/integration/eval_t2p8.py
+  實作：ds_tools.py execute_python_code 改 subprocess 隔離 + timeout
+  驗收：timeout 後回傳 {"error": "Timeout after 30s"}
+
+之後：T3-P9（retry）→ T3-P10（eval pipeline）→ T3-P11（run report）→ T3-P12（delegation contract）
 ```
 
 **接線順序（依賴關係）：**
@@ -169,8 +165,11 @@ pytest tests/ → 63 passed (2026-05-08)
 - [x] `supervisor_workflow.py` post_answer_node 呼叫並印 [Evidence] utilization
 - [x] pytest regression：63 passed（無退步）
 
-### T2-P9：Blackboard Index Injection（待完成，依賴 T2-P6）
-- [ ] `delegate_tools.py` _format_bb_index() + anchor_msg 方案（取代 T1-P4 暫行版）
+### T2-P9：Blackboard Index Injection ✅ 2026-05-09
+- [x] `tests/integration/eval_t2p9.py` — 4 tests
+- [x] `delegate_tools.py` `_format_bb_index()` — 支援 provenance dict + legacy string facts
+- [x] `delegate_tools.py` `_invoke_stage1` 替換 T1-P4 暫行版為 anchor_msg 方案（bb_index + task 永不被截斷）
+- [x] pytest regression：63 passed（無退步）
 
 ---
 

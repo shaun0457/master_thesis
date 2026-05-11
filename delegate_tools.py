@@ -17,6 +17,30 @@ from run_logger import emit_bb_write, emit_bb_read, note_tool_call
 
 POLICY = 'minimal'
 
+
+def _format_bb_index(blackboard: dict) -> str:
+    """Produce a compact [BLACKBOARD INDEX] summary of current blackboard state."""
+    facts = (blackboard or {}).get("facts", [])
+    datasets = (blackboard or {}).get("datasets", [])
+    open_issues = (blackboard or {}).get("open_issues", [])
+    if not facts and not datasets:
+        return "[BLACKBOARD INDEX]\n  (empty — no evidence yet)"
+    lines = ["[BLACKBOARD INDEX]"]
+    for f in facts:
+        if isinstance(f, dict):
+            agent = f.get("agent", "?")
+            conf = f.get("confidence", 1.0)
+            claim = f.get("claim", "")
+            lines.append(f"  [{agent}/conf:{conf:.2f}] {claim}")
+        else:
+            lines.append(f"  {f}")
+    for d in datasets:
+        lines.append(f"  [dataset] {d}")
+    if open_issues:
+        lines.append(f"  open_issues: {open_issues}")
+    return "\n".join(lines)
+
+
 _ADDITIVE_METRICS = {
     "llm_calls_total", "tokens_in_total", "tokens_out_total",
     "llm_latency_ms_sum", "tool_calls_total", "cache_hits",
@@ -685,17 +709,15 @@ def _invoke_stage1(agent: str, intro_msgs: List[HumanMessage], extra_tools: List
     if state.get("db_url"):
         os.environ["DATABASE_URL"] = state["db_url"]
 
-    # === 關鍵：訊息順序要讓「最後一則」是子代理要接的 Human 指令 ===
+    # === Anchor 方案：bb_index + task 作為最後一則 HumanMessage，不被壓縮 ===
     from context_assembler import DynamicContextAssembler as _DCA
     _ca = _DCA()
-    raw_msgs = state.get("messages", []) + intro_msgs
-    msgs = _ca.compress_messages(raw_msgs, target_tokens=8000)
-
-    # 保險：確保最後一則真的是 HumanMessage（有些路徑可能仍以 AIMessage 結尾）
-    if not msgs or not isinstance(msgs[-1], HumanMessage):
-        # 用 intro 裡的最後一句當補充；若沒有，就放一個最小任務提示
-        fallback_text = intro_msgs[-1].content if intro_msgs else "Please proceed with the delegated task."
-        msgs.append(HumanMessage(content=fallback_text))
+    task_text = intro_msgs[-1].content if intro_msgs else "Please proceed with the delegated task."
+    bb_index = _format_bb_index(state.get("blackboard", {}))
+    anchor_msg = HumanMessage(content=f"{bb_index}\n\n{task_text}")
+    history_msgs = state.get("messages", [])
+    compressed_history = _ca.compress_messages(history_msgs, target_tokens=6000)
+    msgs = compressed_history + [anchor_msg]  # anchor 永遠在最後，不被截斷
 
     sub_state = {
         "messages": msgs,
