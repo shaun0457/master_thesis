@@ -1,6 +1,6 @@
 # PROGRESS.md — 重構進度追蹤
 
-## 目前狀態：Production Upgrade Tier 3 進行中 — T3-P12 完成 ✅
+## 目前狀態：System Prompt 重設計完成，TEP DB 合併進行中
 
 ## 🔴 下一個動作（新 session 直接從這裡開始）
 
@@ -15,9 +15,20 @@ Production Upgrade Tier 2 + 3（T2-P5/P6/P7/P9 全部完成 ✅）。
 
 之後：T3-P9（retry）→ T3-P10（eval pipeline）→ T3-P11（run report）→ T3-P12（delegation contract）
 
-T3-P12 已完成，下一個：T3-P13 — Versioned Prompt YAML（或停在此處視需求）
-  計劃：prompts/v1/cores.yaml + context_assembler.py YAML-backed system prompts
-  依賴：context_assembler.py 目前 hard-coded；可選升級
+## 🔴 下一步（新 session 從這裡開始）
+
+### 等待完成
+- [ ] `tep_combined.db` 建立中（scripts/build_tep_combined_db.py，背景執行）
+  - 完成後：更新 de_tools.py 的 DB 路徑指向 tep_combined.db
+  - 驗收：DE 可查 faultnumber=4 的 xmeas_9 平均值
+
+### 待實作
+- [ ] KG TEP schema 擴充（manufacturing-kg-agent worktree）
+  - 新建 config/tep_schema.py（Fault/Measurement/ManipulatedVariable/ProcessUnit nodes）
+  - 修改 config/graph_schema.py（加 TEP labels + relations）
+  - 修改 tools/neo4j_client.py（加 TEP constraints）
+  - 填入 TEP 知識（fault_descriptions + sensor-fault mappings）
+- [ ] ME agent 加 KG query tool（query Neo4j 取代 PDF RAG 部分查詢）
 ```
 
 **接線順序（依賴關係）：**
@@ -180,6 +191,16 @@ pytest tests/ → 63 passed (2026-05-12)
 - [x] `ds_tools.py` `_execute_python_subprocess()` — subprocess 隔離 + timeout
 - [x] `execute_python_code` @tool 改用 subprocess，移除 langchain_experimental 依賴
 - [x] pytest regression：63 passed（無退步）
+
+### System Prompt 重設計 ✅ 2026-05-12
+- [x] `context_assembler.py` STATIC_CORES 全面重寫：
+  - Supervisor：加診斷 SOP（ME→DE→DS→final_answer 順序）+ success_criteria 提醒
+  - ME：加 sensor-fault 映射表（IDV 4/11/14 → XMEAS 7/9; IDV 1-3/6/7 → XMEAS 1-4/6 等）
+  - DE：加完整 DB schema（tep_combined.db 欄位名、常用 SQL pattern、fault onset ~sample 160）
+  - DS：加分析 SOP（trend plot → statistical test → PCA/T²）
+- [x] PHASE_SNIPPETS / PROTOCOL_SNIPPETS 同步更新
+- [x] `scripts/build_tep_combined_db.py` 新建（合併 FaultFree + Faulty，各 50 runs/fault）
+- [x] pytest regression：63 passed
 
 ### T3-P12：Delegation Contract ✅ 2026-05-12
 - [x] `supervisor_tools.py` — 3 個 delegate tool Args 加 `success_criteria: Optional[str]` 欄位
