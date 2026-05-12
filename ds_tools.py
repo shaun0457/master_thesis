@@ -1,13 +1,9 @@
 # ds_tools.py (最终修正版 - 使用自定义工具)
 from typing import List, Optional
 from langchain_core.tools import tool
-from langchain_experimental.tools import PythonREPLTool
 from bb_tools import bb_list_datasets, bb_get_latest_dataset, bb_preview_dataset, bb_list_datasets_py
 from run_logger import get_run_logger
 import os, json
-
-# 創建一個底層的 REPL 實例，我們的自訂工具將會調用它
-_python_repl = PythonREPLTool()
 
 def _resolve_path(it: dict) -> Optional[str]:
     # 1) 優先用 datasets 的 ref（字串路徑）
@@ -52,24 +48,52 @@ def ds_pick_dataset_path(prefer_topic: str = "") -> str:
 
     return json.dumps({"status":"empty"}, ensure_ascii=False)
 
+def _execute_python_subprocess(code: str, timeout: int = 30) -> dict:
+    """Run code in a subprocess for isolation and timeout safety."""
+    import subprocess
+    import tempfile
+    import sys as _sys
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False, encoding="utf-8") as f:
+        f.write(code)
+        tmp_path = f.name
+    try:
+        result = subprocess.run(
+            [_sys.executable, tmp_path],
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            env={**os.environ, "PYTHONPATH": os.getcwd()},
+        )
+        return {"stdout": result.stdout, "stderr": result.stderr, "returncode": result.returncode}
+    except subprocess.TimeoutExpired:
+        return {"error": f"Timeout after {timeout}s"}
+    except Exception as e:
+        return {"error": str(e)}
+    finally:
+        try:
+            os.unlink(tmp_path)
+        except Exception:
+            pass
+
+
 @tool
 def execute_python_code(code: str) -> str:
     """
-    Execute Python code in a sandbox and return text result (instrumented).
+    Execute Python code in an isolated subprocess sandbox and return text result.
     """
     rl = get_run_logger()
-    import os
     task_id = os.getenv("TASK_ID")
     try:
         with rl.tool_exec(agent="DS", tool="execute_python_code", task_id=task_id, args={"code_len": len(code or "")}) as t:
-            result = _python_repl.invoke(code)
-            t.ok(True)
-        return result
+            result = _execute_python_subprocess(code, timeout=30)
+            ok = "error" not in result and result.get("returncode", 0) == 0
+            t.ok(ok)
+        return json.dumps(result, ensure_ascii=False)
     except Exception as e:
         rl.error_event(agent="DS", kind="python_error", message=f"{type(e).__name__}: {e}", task_id=task_id, recovered=False, exc=e)
         with rl.tool_exec(agent="DS", tool="execute_python_code", task_id=task_id, args={"err": str(e)}) as t:
             t.ok(False)
-        return f"Error executing code: {type(e).__name__}: {str(e)}"
+        return json.dumps({"error": f"{type(e).__name__}: {e}"}, ensure_ascii=False)
 
 def get_ds_tools(mode: str = "augmented") -> (list, dict):
     tools = [execute_python_code, bb_list_datasets, bb_get_latest_dataset, bb_preview_dataset, ds_pick_dataset_path]
