@@ -79,19 +79,26 @@ git commit -m "feat: <step description>"
 | `tests/test_judge.py` | ✅ | 9/9 |
 | `tests/test_llm_cache.py` | ✅ | 14/14 |
 
-### ⏳ 待修改（Step 6 接線）
+### ✅ 已完成（Step 6 接線）
 | 檔案 | 狀態 | 說明 |
 |------|------|------|
-| `metrics.py` | ⏳ | 加 ~20 個新欄位 + note_judge_result() |
-| `run_logger.py` | ⏳ | llm_call() context mgr；summary.json；assert → warning |
-| `prompt_builder.py` | ⏳ | 完整重寫為 thin wrapper → context_assembler |
-| `delegate_tools.py` | ⏳ | _summarize_out 改 Pydantic primary path |
-| `supervisor_workflow.py` | ⏳ | phase-aware prompt + judge trigger |
-| `me_workflow.py` | ⏳ | LLM invoke → LLMCallHarness；SelfEvaluator |
-| `de_workflow.py` | ⏳ | LLM invoke → LLMCallHarness |
-| `ds_workflow_s2.py` | ⏳ | LLM invoke → LLMCallHarness；SelfEvaluator |
-| `chat_cli.py` | ⏳ | judge score + usage summary 顯示 |
-| `common.py` | ⏳ | AgentState 加 token_usage / harness_metrics 欄位 |
+| `metrics.py` | ✅ | 加 ~20 個新欄位 + note_judge_result() |
+| `run_logger.py` | ✅ | llm_call() context mgr；summary.json；assert → warning |
+| `prompt_builder.py` | ✅ | 完整重寫為 thin wrapper → context_assembler |
+| `delegate_tools.py` | ✅ | _summarize_out 改 Pydantic primary path |
+| `supervisor_workflow.py` | ✅ | phase-aware prompt + judge trigger |
+| `me_workflow.py` | ✅ | LLM invoke → LLMCallHarness；SelfEvaluator |
+| `de_workflow.py` | ✅ | LLM invoke → LLMCallHarness |
+| `ds_workflow_s2.py` | ✅ | LLM invoke → LLMCallHarness；SelfEvaluator |
+| `chat_cli.py` | ✅ | judge score + usage summary 顯示 |
+| `common.py` | ✅ | AgentState 加 token_usage / harness_metrics 欄位 |
+
+### ✅ KG 接線（KG-5 完成）
+| 檔案 | 狀態 | 說明 |
+|------|------|------|
+| `neo4j_kg.py` | ✅ | Neo4j 連線 + kg_query_fault_local()（fallback） |
+| `tep_knowledge.py` | ✅ | TEP lookup tables（FAULT_DESCRIPTIONS/FAULT_SENSORS/PROCESS_UNITS） |
+| `me_tools.py` | ✅ | kg_query_fault @tool → Neo4j + fallback；已加入 get_me_tools() |
 
 ### ✅ 已切換（非重構核心）
 | 檔案 | 狀態 | 說明 |
@@ -123,7 +130,7 @@ git commit -m "feat: <step description>"
 cd MT-phase-2
 pytest tests/ -v --tb=short -q
 ```
-**預期：63 passed**（Step 5 完成後）
+**預期：72 passed**（KG-5 完成後）
 
 ## 如何執行系統
 ```bash
@@ -133,13 +140,13 @@ python chat_cli.py
 
 ## 架構圖（完成後）
 ```
-context_assembler.py  (≤300 token system prompts)
-    → llm_harness.py (LLMCallHarness + SelfEvaluator)
-    → llm_cache.py   (ExactMatchCache + PrefixStabilizer)
+context_assembler.py  ≤300 token system prompts
+    → llm_harness.py LLMCallHarness + SelfEvaluator
+    → llm_cache.py   ExactMatchCache + PrefixStabilizer
         → supervisor_workflow.py
             → router.py → delegate_tools.py
                 → me_workflow / de_workflow / ds_workflow
-        → judge.py (final_answer 後觸發)
-structured_outputs.py  (被 delegate_tools._summarize_out 使用)
-metrics.py + run_logger.py  (observability 層)
+        → judge.py  final_answer 後觸發
+structured_outputs.py  被 delegate_tools._summarize_out 使用
+metrics.py + run_logger.py  observability 層
 ```

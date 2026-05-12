@@ -30,6 +30,9 @@ STATIC_CORES: Dict[str, str] = {
         "  Separator/Condenser (IDV 5,12,15): watch XMEAS(11-14), XMEAS(22), XMV(7)\n"
         "  Composition faults (IDV 8-10): watch XMEAS(23-28) reactor feed concentrations\n"
         "  Kinetics/Drift (IDV 13): slow changes in XMEAS(9) temp and XMEAS(7) pressure\n"
+        "Use kg_query_fault(idv_number) for structured fault knowledge; "
+        "it returns {description, diagnostic_sensors, context_chunks} where "
+        "context_chunks are PDF evidence passages from Neo4j — cite them as [source_doc p.N].\n"
         "Every claim MUST cite source as [filename p.N]. Call synthesize_and_cite when done."
     ),
     "DE": (
