@@ -5,30 +5,14 @@
 ## 🔴 下一個動作（新 session 直接從這裡開始）
 
 ```
-Production Upgrade Tier 2 + 3（T2-P5/P6/P7/P9 全部完成 ✅）。
-完整計劃：C:\Users\chengting\.claude\plans\code-2025-6-2026agentic-code-prompt-eng-expressive-island.md
+DB + KG schema 完成。下一步：ME agent 加 KG query tool。
 
-下一個 item：T2-P8 — DS 程式碼沙箱（ds_tools.py subprocess 隔離）
-  先建：tests/integration/eval_t2p8.py
-  實作：ds_tools.py execute_python_code 改 subprocess 隔離 + timeout
-  驗收：timeout 後回傳 {"error": "Timeout after 30s"}
-
-之後：T3-P9（retry）→ T3-P10（eval pipeline）→ T3-P11（run report）→ T3-P12（delegation contract）
-
-## 🔴 下一步（新 session 從這裡開始）
-
-### 等待完成
-- [ ] `tep_combined.db` 建立中（scripts/build_tep_combined_db.py，背景執行）
-  - 完成後：更新 de_tools.py 的 DB 路徑指向 tep_combined.db
-  - 驗收：DE 可查 faultnumber=4 的 xmeas_9 平均值
-
-### 待實作
-- [ ] KG TEP schema 擴充（manufacturing-kg-agent worktree）
-  - 新建 config/tep_schema.py（Fault/Measurement/ManipulatedVariable/ProcessUnit nodes）
-  - 修改 config/graph_schema.py（加 TEP labels + relations）
-  - 修改 tools/neo4j_client.py（加 TEP constraints）
-  - 填入 TEP 知識（fault_descriptions + sensor-fault mappings）
-- [ ] ME agent 加 KG query tool（query Neo4j 取代 PDF RAG 部分查詢）
+待實作：
+- [ ] ME agent 加 kg_query_fault tool（呼叫 manufacturing-kg-agent 的 query_tep_fault_tool）
+  - me_tools.py 新建 kg_query_fault @tool（包裝 query_fault_knowledge 或 HTTP call）
+  - me_workflow.py 加入 kg_query_fault 到 ME tools list
+  - 驗收：ME 可直接查詢 IDV=4 的診斷 sensor 列表（不需讀 PDF）
+- [ ] 確認 PyTorch crash 不影響 63 unit tests（已驗證：unit tests 全過）
 ```
 
 **接線順序（依賴關係）：**
@@ -224,6 +208,17 @@ pytest tests/ → 63 passed (2026-05-12)
 - [x] `eval/regression_gate.py` — keyword hit rate / DS verdict / ME citation gate，exit code 0/1
 - [x] `tests/integration/eval_t3p10.py` — 5 tests（全通過）
 - [x] pytest regression：63 passed（無退步）
+
+### tep_combined.db ✅ 2026-05-12
+- [x] `scripts/build_tep_combined_db.py` — 合併 FaultFree (IDV=0, 250K) + Faulty (IDV 1-20, 25K each)
+- [x] `de_tools.py` — DB_URL 改指向 `tep_combined.db`
+- [x] 驗收：DE 可查 IDV=4 的 xmeas_9 平均值（25,000 rows, AVG=120.4°C）
+
+### KG TEP Schema ✅ 2026-05-12
+- [x] `manufacturing-kg-agent/config/tep_schema.py` — TEP_FAULT_DESCRIPTIONS(IDV 0-20) + TEP_FAULT_SENSORS + TEP_PROCESS_UNITS + TEP_RELATION_ENDPOINTS
+- [x] `config/graph_schema.py` — merge TEP node labels (Fault/Measurement/ManipulatedVar/ProcessUnit) + relations
+- [x] `tools/neo4j_client.py` — TEP constraints/indexes + populate_tep_knowledge() + query_fault_knowledge() + populate_tep_tool + query_tep_fault_tool
+- [x] manufacturing-kg-agent tests: 83 passed（無退步）
 
 ### T3-P9：Retry + Circuit Breaker ✅ 2026-05-12
 - [x] `tests/integration/eval_t3p9.py` — 5 tests（retry/reraise/429/no-retry/source check）

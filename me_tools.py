@@ -440,9 +440,28 @@ def normalize_tools(tools: List[Any]) -> List[Any]:
     return norm
 
 
+@tool("kg_query_fault")
+def kg_query_fault(fault_id: int) -> str:
+    """Query TEP fault knowledge for a specific IDV fault (0-20).
+
+    Returns structured fault knowledge: description, diagnostic sensors, affected process units.
+    Use this BEFORE PDF search for fault identification — faster and more structured.
+
+    Args:
+        fault_id: Integer fault ID (e.g. 4 for reactor cooling water fault).
+
+    Returns:
+        JSON with fault description, diagnostic_sensors list, and process unit context.
+    """
+    from tep_knowledge import lookup_fault
+    result = lookup_fault(fault_id)
+    return json.dumps(result, ensure_ascii=False)
+
+
 def get_me_tools(mode: str):
 
-    tools = [initial_search, read_document_chunk, synthesize_and_cite, me_warmup_read, me_write_fact]
+    tools = [initial_search, read_document_chunk, synthesize_and_cite,
+             me_warmup_read, me_write_fact, kg_query_fault]
 
     # 保險檢查：每個工具都應該是 LangChain Tool 物件（具有 .name）
     assert all(hasattr(t, "name") for t in tools), "Some ME tools are not LangChain Tool objects."
