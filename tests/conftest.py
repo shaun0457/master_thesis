@@ -2,6 +2,10 @@
 Shared pytest fixtures for MAS 2026 refactor tests.
 All fixtures use mocks — no real Gemini API calls.
 """
+import os
+# Must be set before torch/transformers loads to avoid Windows OMP crash
+os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
+
 import pytest
 from unittest.mock import MagicMock
 from langchain_core.messages import AIMessage

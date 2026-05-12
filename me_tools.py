@@ -444,17 +444,21 @@ def normalize_tools(tools: List[Any]) -> List[Any]:
 def kg_query_fault(fault_id: int) -> str:
     """Query TEP fault knowledge for a specific IDV fault (0-20).
 
-    Returns structured fault knowledge: description, diagnostic sensors, affected process units.
+    Returns structured fault knowledge from Neo4j KG (with PDF evidence chunks and
+    LLM-generated summary_md). Falls back to local TEP knowledge base if Neo4j is
+    unavailable (e.g. AuraDB paused, no credentials).
+
     Use this BEFORE PDF search for fault identification — faster and more structured.
 
     Args:
         fault_id: Integer fault ID (e.g. 4 for reactor cooling water fault).
 
     Returns:
-        JSON with fault description, diagnostic_sensors list, and process unit context.
+        JSON with fault description, diagnostic_sensors, summary_md, context_chunks,
+        evidence (with source_doc + page), and source.
     """
-    from tep_knowledge import lookup_fault
-    result = lookup_fault(fault_id)
+    from neo4j_kg import query_fault_kg
+    result = query_fault_kg(fault_id)
     return json.dumps(result, ensure_ascii=False)
 
 
