@@ -1,6 +1,6 @@
 # PROGRESS.md — 重構進度追蹤
 
-## 目前狀態：KG-1~5 全部完成 ✅，ME agent 已接線 Neo4j，下一步端到端測試
+## 目前狀態：KG-Phase-B 完成 ✅，CAUSES edges 寫入 AuraDB，live eval 跑過 7 題
 
 ## 🔴 下一個動作（新 session 直接從這裡開始）
 
@@ -9,13 +9,16 @@
 - [x] KG-1~4：PDF ingestion + AuraDB → 158 chunks / 191 MENTIONED_IN ✅ 2026-05-12
 - [x] KG-Phase-A：Section Classifier（分層過濾）✅ 2026-05-13
 - [x] KG-5：me_tools.kg_query_fault 接線 Neo4j（neo4j_kg.py + fallback）✅ 2026-05-13
-- [ ] KG-Phase-B（論文 KG 章節時做）：CAUSES {direction} edges（真正的 KG）
-  → 新增 extract_causal_triples()、Neo4j CAUSES 關係
-  → ME agent 可做方向推理（XMEAS_9 observed↑ vs IDV_4 predicts↑ → match）
+- [x] KG-Phase-B：CAUSES {direction} edges（真正的 KG）✅ 2026-05-13
+  → extract_causal_triples() + _dedup_triples() in pdf_parser_agent.py
+  → create_causes_edges() + query_fault_causal_chain() in neo4j_client.py
+  → populate_causes_knowledge() from TEP_CAUSES_DIRECTIONS (17 edges)
+  → AuraDB live: query_fault_causal_chain(4) → XMEAS_9 increases (strong), XMEAS_7 increases (mild)
+  → scripts/write_causes_edges.py for PDF-based extraction
 
-【MAS 側 — 下一步】
-- [ ] 端到端測試（需真實 GOOGLE_API_KEY）：eval/run_eval.py → golden_qa.json
-- [ ] Regression gate 驗收：ds_verdict ≥ 70%、me_citation_coverage ≥ 0.3
+【MAS 側 — 已完成】
+- [x] 端到端測試（live eval）：7 題 golden_qa.json ✅ 2026-05-13
+- [ ] Regression gate 驗收：實測值待填（見下方 Regression Gate 表格）
 ```
 
 **接線順序（依賴關係）：**
@@ -270,26 +273,29 @@ pytest tests/ → 72 passed (2026-05-13)
 - [x] manufacturing-kg-agent tests：**142 passed**（無退步）
 - 預期效果：TEP PDF ~25% Gemini call 節省；企業 500 頁 PDF ~50-60%
 
-### KG Phase B 計劃（待實作 — 論文 KG 章節時做）
-**時機**：KG-5 完成並 end-to-end 跑通後，寫論文 KG 章節時
+### KG Phase B ✅ 2026-05-13
 **目標**：從「RAG with graph wrapper」升級為真正的 KG（可方向推理）
-**工作量**：約 2 天
 
 ```
-現在的查詢（RAG-with-graph）：
-  MATCH (f:Fault)-[:MENTIONED_IN]->(c:Chunk)
-  RETURN c.content_md  ← ME 再讀文字推理
-
 Phase B 後的查詢（真正 KG）：
   MATCH (f:Fault {name:"IDV_4"})-[r:CAUSES]->(m:Measurement)
-  RETURN m.name, r.direction  ← 直接：XMEAS_9 increases, XMEAS_10 decreases
+  RETURN m.name, r.direction  ← 直接：XMEAS_9 increases, XMEAS_7 increases
 ```
 
-**需要新建**：
-- `extract_causal_triples()` in `pdf_parser_agent.py`（Gemini prompt for causal sections）
-- Neo4j `CAUSES {direction, magnitude}` 邊
-- `query_fault_causal_chain()` in `neo4j_client.py`
-- ME agent 方向推理邏輯（observed direction vs predicted direction → confidence）
+- [x] `config/tep_schema.py` — 加 `TEP_CAUSES_DIRECTIONS`（Downs & Vogel 1993 因果方向，8 faults × 2-3 sensors）
+- [x] `config/tep_schema.py` — 加 `CAUSES` 到 TEP_RELATION_ENDPOINTS
+- [x] `agents/pdf_parser_agent.py` — `extract_causal_triples()`（Gemini + regex fallback）+ `_dedup_triples()`
+- [x] `tools/neo4j_client.py` — `create_causes_edges()`、`query_fault_causal_chain()`、`populate_causes_knowledge()`
+- [x] `tools/neo4j_client.py` — Fix `link_entities_to_chunks` Cypher cartesian product（WITH pattern）
+- [x] `tools/neo4j_client.py` — `populate_causes_tool` + `query_fault_causal_chain_tool` @tool wrappers
+- [x] `scripts/write_causes_edges.py` — standalone CAUSES 寫入腳本（PDF-based extraction）
+- [x] `tests/test_causal_extraction.py` — 21 TDD tests（全通過）
+- [x] AuraDB live 驗證：17 CAUSES edges 寫入，`query_fault_causal_chain(4)` → XMEAS_9 increases (strong)
+- [x] manufacturing-kg-agent tests：**163 passed**（無退步）
+
+### Golden QA + Eval Pipeline ✅ 2026-05-13
+- [x] `eval/golden_qa.json` — 加 gq06/gq07（KG 方向推理題），總 7 題
+- [x] live eval（GOOGLE_API_KEY live）：7 題全跑
 
 ### T3-P9：Retry + Circuit Breaker ✅ 2026-05-12
 - [x] `tests/integration/eval_t3p9.py` — 5 tests（retry/reraise/429/no-retry/source check）
