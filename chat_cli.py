@@ -346,6 +346,12 @@ def main():
                                 cache_hits = m.get("cache_hits", 0)
                                 print(f"[Usage] tokens_in={tokens_in} tokens_out={tokens_out} "
                                       f"llm_latency={latency:.0f}ms cache_hits={cache_hits}")
+                                from run_logger import _compute_cost_usd
+                                cost = _compute_cost_usd(tokens_in, tokens_out)
+                                if cost is not None:
+                                    print(f"[Cost] ${cost:.4f}  (in={tokens_in:,} × $1.25/M  out={tokens_out:,} × $10.00/M)")
+                                else:
+                                    print("[Cost] no token data — HarnessCallback not triggered or no real API call")
                                 if m.get("judge_triggered"):
                                     fg = m.get("judge_factual_grounding", "?")
                                     cp = m.get("judge_completeness", "?")

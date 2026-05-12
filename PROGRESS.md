@@ -1,6 +1,6 @@
 # PROGRESS.md — 重構進度追蹤
 
-## 目前狀態：Production Upgrade Tier 3 進行中 — T3-P10 完成 ✅
+## 目前狀態：Production Upgrade Tier 3 進行中 — T3-P11 完成 ✅
 
 ## 🔴 下一個動作（新 session 直接從這裡開始）
 
@@ -15,10 +15,10 @@ Production Upgrade Tier 2 + 3（T2-P5/P6/P7/P9 全部完成 ✅）。
 
 之後：T3-P9（retry）→ T3-P10（eval pipeline）→ T3-P11（run report）→ T3-P12（delegation contract）
 
-T3-P10 已完成，下一個：T3-P11 — Cost Tracking + Run Report
-  實作：run_logger.py flush() 加 cost_usd 計算（input $3.5/1M，output $10.5/1M for gemini-2.5-pro）
-  實作：run_logger.py flush() 輸出 run_report.md（人可讀摘要）
-  實作：chat_cli.py 結尾顯示 [Cost] $X.XXXX
+T3-P11 已完成，下一個：T3-P12 — Delegation Contract
+  實作：supervisor_tools.py 加 success_criteria 欄位到 delegate_task tool
+  實作：delegate_tools.py _invoke_stage1 anchor 加入 [TASK CONTRACT] 區塊
+  驗收：eval_t3p12.py 驗證 anchor 包含 success_criteria
 ```
 
 **接線順序（依賴關係）：**
@@ -180,6 +180,15 @@ pytest tests/ → 63 passed (2026-05-12)
 - [x] `tests/integration/eval_t2p8.py` — 4 tests（basic/timeout/syntax error/tool interface）
 - [x] `ds_tools.py` `_execute_python_subprocess()` — subprocess 隔離 + timeout
 - [x] `execute_python_code` @tool 改用 subprocess，移除 langchain_experimental 依賴
+- [x] pytest regression：63 passed（無退步）
+
+### T3-P11：Cost Tracking + Run Report ✅ 2026-05-12
+- [x] `harness_callback.py` `_extract_tokens()` — 3 條路徑 fallback（llm_output / generation_info / AIMessage.usage_metadata），0 token 只有在三條都沒資料才回傳
+- [x] `run_logger.py` `_compute_cost_usd()` — token=0 回傳 None（不虛報 $0.0000）；pricing 可用 env var 覆寫
+- [x] `run_logger.py` `_write_run_report()` — 輸出 run_report.md（Cost/Tokens/Quality 三節）
+- [x] `run_logger.py` `flush()` — 加 cost_usd + run_report.md
+- [x] `chat_cli.py` — `[Cost]` 行：有 token 顯示真實金額，無 token 顯示明確警告
+- [x] `tests/integration/eval_t3p11.py` — 6 tests（全通過）
 - [x] pytest regression：63 passed（無退步）
 
 ### T3-P10：Golden Dataset Eval Pipeline ✅ 2026-05-12

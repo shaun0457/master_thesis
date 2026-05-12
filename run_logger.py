@@ -126,6 +126,65 @@ def _hash_file(path: str) -> Optional[str]:
     except Exception:
         return None
 
+# Gemini 2.5 Pro pricing (2026-05). Override via env if Google updates rates.
+_PRICE_IN_PER_M  = float(os.environ.get("GEMINI_PRICE_IN_PER_M",  "1.25"))
+_PRICE_OUT_PER_M = float(os.environ.get("GEMINI_PRICE_OUT_PER_M", "10.00"))
+
+
+def _compute_cost_usd(tokens_in: int, tokens_out: int) -> float | None:
+    """Return cost in USD, or None if no real token data was captured."""
+    if not tokens_in and not tokens_out:
+        return None
+    return round((tokens_in * _PRICE_IN_PER_M + tokens_out * _PRICE_OUT_PER_M) / 1_000_000, 6)
+
+
+def _write_run_report(out_dir: str, summary: dict, data: dict) -> None:
+    """Write a human-readable run_report.md next to summary.json."""
+    try:
+        import datetime as _dt
+        ts = _dt.datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
+        cost = summary.get("cost_usd")
+        cost_str = f"${cost:.4f}" if cost is not None else "n/a (no token data)"
+        tokens_in  = summary.get("tokens_in_total", 0)
+        tokens_out = summary.get("tokens_out_total", 0)
+        llm_calls  = summary.get("llm_calls_total", 0)
+        latency    = summary.get("llm_latency_ms_sum", 0.0)
+        judge      = summary.get("judge_triggered", False)
+        fg = summary.get("judge_factual_grounding")
+        cp = summary.get("judge_completeness")
+        co = summary.get("judge_coherence")
+        eu = (data.get("metrics") or {}).get("evidence_utilization")
+        errors = len(data.get("error_events", []))
+        lines = [
+            f"# Run Report — {summary.get('run_id', 'unknown')}",
+            f"_Generated: {ts}_",
+            "",
+            "## Cost & Tokens",
+            f"| Metric | Value |",
+            f"|--------|-------|",
+            f"| Cost | {cost_str} |",
+            f"| Tokens in | {tokens_in:,} |",
+            f"| Tokens out | {tokens_out:,} |",
+            f"| LLM calls | {llm_calls} |",
+            f"| Total latency | {latency/1000:.1f}s |",
+            "",
+            "## Quality Signals",
+            f"| Metric | Value |",
+            f"|--------|-------|",
+            f"| Judge triggered | {judge} |",
+            f"| Factual grounding | {fg}/3 |" if fg is not None else "| Factual grounding | — |",
+            f"| Completeness | {cp}/3 |" if cp is not None else "| Completeness | — |",
+            f"| Coherence | {co}/3 |" if co is not None else "| Coherence | — |",
+            f"| Evidence utilization | {eu:.2f} |" if eu is not None else "| Evidence utilization | — |",
+            f"| Error events | {errors} |",
+        ]
+        report_path = os.path.join(out_dir, "run_report.md")
+        with open(report_path, "w", encoding="utf-8") as f:
+            f.write("\n".join(lines) + "\n")
+    except Exception:
+        pass
+
+
 class RunLogger:
     def __init__(self, run_id: str, out_json_path: str):
         self.run_id = run_id
@@ -221,11 +280,15 @@ class RunLogger:
                 json.dump(self.data, f, ensure_ascii=False, indent=2)
             # Write summary.json with key harness metrics for quick inspection
             m = self.data.get("metrics", {})
+            tokens_in  = m.get("tokens_in_total", 0)
+            tokens_out = m.get("tokens_out_total", 0)
+            cost_usd = _compute_cost_usd(tokens_in, tokens_out)
             summary = {
                 "run_id": self.run_id,
                 "llm_calls_total": m.get("llm_calls_total", 0),
-                "tokens_in_total": m.get("tokens_in_total", 0),
-                "tokens_out_total": m.get("tokens_out_total", 0),
+                "tokens_in_total": tokens_in,
+                "tokens_out_total": tokens_out,
+                "cost_usd": cost_usd,
                 "llm_latency_ms_sum": m.get("llm_latency_ms_sum", 0.0),
                 "cache_hits": m.get("cache_hits", 0),
                 "judge_triggered": m.get("judge_triggered", False),
@@ -240,6 +303,7 @@ class RunLogger:
             summary_path = os.path.join(out_dir, "summary.json")
             with open(summary_path, "w", encoding="utf-8") as f:
                 json.dump(summary, f, ensure_ascii=False, indent=2)
+            _write_run_report(out_dir, summary, self.data)
         except Exception:
             pass
 
