@@ -1,22 +1,19 @@
 # PROGRESS.md — 重構進度追蹤
 
-## 目前狀態：KG Phase A（分層過濾）✅，下一步 KG-5（ME tools 接線 Neo4j）
+## 目前狀態：KG-1~5 全部完成 ✅，ME agent 已接線 Neo4j，下一步端到端測試
 
 ## 🔴 下一個動作（新 session 直接從這裡開始）
 
 ```
-【KG 側】
+【KG 側 — 全部完成】
 - [x] KG-1~4：PDF ingestion + AuraDB → 158 chunks / 191 MENTIONED_IN ✅ 2026-05-12
 - [x] KG-Phase-A：Section Classifier（分層過濾）✅ 2026-05-13
-- [ ] KG-5：me_tools.py kg_query_fault 改呼叫 Neo4j（fallback → local tep_knowledge.py）
-  → 路徑：manufacturing-kg-agent/tools/neo4j_client.py query_fault_with_context()
-  → 改動位置：MT-phase-2/me_tools.py kg_query_fault @tool
-  → Fallback：Neo4j 不可達時繼續用 tep_knowledge.lookup_fault()
+- [x] KG-5：me_tools.kg_query_fault 接線 Neo4j（neo4j_kg.py + fallback）✅ 2026-05-13
 - [ ] KG-Phase-B（論文 KG 章節時做）：CAUSES {direction} edges（真正的 KG）
   → 新增 extract_causal_triples()、Neo4j CAUSES 關係
   → ME agent 可做方向推理（XMEAS_9 observed↑ vs IDV_4 predicts↑ → match）
 
-【MAS 側】
+【MAS 側 — 下一步】
 - [ ] 端到端測試（需真實 GOOGLE_API_KEY）：eval/run_eval.py → golden_qa.json
 - [ ] Regression gate 驗收：ds_verdict ≥ 70%、me_citation_coverage ≥ 0.3
 ```
@@ -109,12 +106,13 @@
 
 ## Test Status
 ```
-pytest tests/ → 63 passed (2026-05-12)
+pytest tests/ → 72 passed (2026-05-13)
   test_structured_outputs.py  14/14
   test_context_assembler.py   14/14
   test_llm_harness.py         12/12
   test_judge.py                9/9
   test_llm_cache.py           14/14
+  test_neo4j_kg.py             9/9   ← NEW KG-5
 ```
 
 ---
