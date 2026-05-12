@@ -1,0 +1,42 @@
+[
+  {
+    "id": "gq01",
+    "question": "What is the root cause of Fault 4 (IDV=4) in the Tennessee Eastman Process?",
+    "expected_keywords": ["step", "feed", "cooling water", "reactor", "temperature"],
+    "min_keyword_hits": 2,
+    "agent_path": ["ME"],
+    "notes": "Fault 4 is a step change in reactor cooling water inlet temperature"
+  },
+  {
+    "id": "gq02",
+    "question": "Which sensor tag corresponds to reactor temperature in the TEP dataset?",
+    "expected_keywords": ["xmeas", "9", "reactor", "temperature"],
+    "min_keyword_hits": 2,
+    "agent_path": ["ME"],
+    "notes": "XMEAS(9) is reactor temperature"
+  },
+  {
+    "id": "gq03",
+    "question": "What is the average value of XMEAS_1 in the normal operating condition dataset?",
+    "expected_keywords": ["xmeas", "0.", "mean", "average"],
+    "min_keyword_hits": 1,
+    "agent_path": ["DS"],
+    "notes": "Requires DS to load the dataset and compute mean"
+  },
+  {
+    "id": "gq04",
+    "question": "How many distinct fault types are there in the TEP benchmark dataset?",
+    "expected_keywords": ["21", "fault", "idv"],
+    "min_keyword_hits": 2,
+    "agent_path": ["ME"],
+    "notes": "TEP has 21 faults (IDV 1-21)"
+  },
+  {
+    "id": "gq05",
+    "question": "What percentage of observations in the TEP fault dataset correspond to Fault 1?",
+    "expected_keywords": ["%", "fault 1", "idv", "observations", "rows"],
+    "min_keyword_hits": 1,
+    "agent_path": ["DS"],
+    "notes": "Requires DS to load and compute proportion of IDV==1 rows"
+  }
+]
