@@ -5,14 +5,13 @@
 ## 🔴 下一個動作（新 session 直接從這裡開始）
 
 ```
-DB + KG schema 完成。下一步：ME agent 加 KG query tool。
+DB + KG schema + kg_query_fault 全部完成。系統現在可以：
+- DE 查詢 tep_combined.db (750K rows, IDV 0-20)
+- ME 呼叫 kg_query_fault(fault_id=N) 取得結構化 sensor 列表（不需 PDF）
 
-待實作：
-- [ ] ME agent 加 kg_query_fault tool（呼叫 manufacturing-kg-agent 的 query_tep_fault_tool）
-  - me_tools.py 新建 kg_query_fault @tool（包裝 query_fault_knowledge 或 HTTP call）
-  - me_workflow.py 加入 kg_query_fault 到 ME tools list
-  - 驗收：ME 可直接查詢 IDV=4 的診斷 sensor 列表（不需讀 PDF）
-- [ ] 確認 PyTorch crash 不影響 63 unit tests（已驗證：unit tests 全過）
+下一步（可選）：
+- [ ] 端到端測試（需真實 GOOGLE_API_KEY）：測試 IDV=4 的完整診斷流程
+- [ ] 確認 context_assembler.py 的 DE STATIC_CORE 中的 DB 路徑從 tep_database.db 改為 tep_combined.db（提示 LLM 用對 DB）
 ```
 
 **接線順序（依賴關係）：**
@@ -213,6 +212,12 @@ pytest tests/ → 63 passed (2026-05-12)
 - [x] `scripts/build_tep_combined_db.py` — 合併 FaultFree (IDV=0, 250K) + Faulty (IDV 1-20, 25K each)
 - [x] `de_tools.py` — DB_URL 改指向 `tep_combined.db`
 - [x] 驗收：DE 可查 IDV=4 的 xmeas_9 平均值（25,000 rows, AVG=120.4°C）
+
+### ME KG Query Tool ✅ 2026-05-12
+- [x] `tep_knowledge.py` — 本地 TEP lookup tables（FAULT_DESCRIPTIONS/FAULT_SENSORS/PROCESS_UNITS/lookup_fault()）
+- [x] `me_tools.py` `kg_query_fault` @tool — 包裝 tep_knowledge.lookup_fault，加入 get_me_tools() list
+- [x] 驗收：kg_query_fault(4) → {description, sensors: xmeas_9/7/xmv_6, unit: Reactor}
+- [x] pytest regression：63 passed（無退步）
 
 ### KG TEP Schema ✅ 2026-05-12
 - [x] `manufacturing-kg-agent/config/tep_schema.py` — TEP_FAULT_DESCRIPTIONS(IDV 0-20) + TEP_FAULT_SENSORS + TEP_PROCESS_UNITS + TEP_RELATION_ENDPOINTS
