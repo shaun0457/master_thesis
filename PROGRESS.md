@@ -1,17 +1,24 @@
 # PROGRESS.md — 重構進度追蹤
 
-## 目前狀態：System Prompt 重設計完成，TEP DB 合併進行中
+## 目前狀態：KG Phase A（分層過濾）✅，下一步 KG-5（ME tools 接線 Neo4j）
 
 ## 🔴 下一個動作（新 session 直接從這裡開始）
 
 ```
-DB + KG schema + kg_query_fault 全部完成。系統現在可以：
-- DE 查詢 tep_combined.db (750K rows, IDV 0-20)
-- ME 呼叫 kg_query_fault(fault_id=N) 取得結構化 sensor 列表（不需 PDF）
+【KG 側】
+- [x] KG-1~4：PDF ingestion + AuraDB → 158 chunks / 191 MENTIONED_IN ✅ 2026-05-12
+- [x] KG-Phase-A：Section Classifier（分層過濾）✅ 2026-05-13
+- [ ] KG-5：me_tools.py kg_query_fault 改呼叫 Neo4j（fallback → local tep_knowledge.py）
+  → 路徑：manufacturing-kg-agent/tools/neo4j_client.py query_fault_with_context()
+  → 改動位置：MT-phase-2/me_tools.py kg_query_fault @tool
+  → Fallback：Neo4j 不可達時繼續用 tep_knowledge.lookup_fault()
+- [ ] KG-Phase-B（論文 KG 章節時做）：CAUSES {direction} edges（真正的 KG）
+  → 新增 extract_causal_triples()、Neo4j CAUSES 關係
+  → ME agent 可做方向推理（XMEAS_9 observed↑ vs IDV_4 predicts↑ → match）
 
-下一步（可選）：
-- [ ] 端到端測試（需真實 GOOGLE_API_KEY）：測試 IDV=4 的完整診斷流程
-- [ ] 確認 context_assembler.py 的 DE STATIC_CORE 中的 DB 路徑從 tep_database.db 改為 tep_combined.db（提示 LLM 用對 DB）
+【MAS 側】
+- [ ] 端到端測試（需真實 GOOGLE_API_KEY）：eval/run_eval.py → golden_qa.json
+- [ ] Regression gate 驗收：ds_verdict ≥ 70%、me_citation_coverage ≥ 0.3
 ```
 
 **接線順序（依賴關係）：**
@@ -220,10 +227,71 @@ pytest tests/ → 63 passed (2026-05-12)
 - [x] pytest regression：63 passed（無退步）
 
 ### KG TEP Schema ✅ 2026-05-12
-- [x] `manufacturing-kg-agent/config/tep_schema.py` — TEP_FAULT_DESCRIPTIONS(IDV 0-20) + TEP_FAULT_SENSORS + TEP_PROCESS_UNITS + TEP_RELATION_ENDPOINTS
+- [x] `manufacturing-kg-agent/config/tep_schema.py` — TEP_FAULT_DESCRIPTIONS(IDV 0-20) + TEP_FAULT_SENSORS + TEP_PROCESS_UNITS + TEP_RELATION_ENDPOINTS + lookup_fault()
 - [x] `config/graph_schema.py` — merge TEP node labels (Fault/Measurement/ManipulatedVar/ProcessUnit) + relations
 - [x] `tools/neo4j_client.py` — TEP constraints/indexes + populate_tep_knowledge() + query_fault_knowledge() + populate_tep_tool + query_tep_fault_tool
 - [x] manufacturing-kg-agent tests: 83 passed（無退步）
+
+### KG PDF Ingestion Pipeline ✅ 2026-05-12
+- [x] `agents/models.py` — 加 ParsedDocument + IngestResult dataclass；ExtractionResult 加 sections/mentions 欄位
+- [x] `config/graph_schema.py` — 加 Chunk label + PART_OF/MENTIONED_IN/CITES/REVISES/EXTENDS/CONTRADICTS
+- [x] `tools/pdf_parser.py` — 完整改寫：pymupdf4llm primary + _split_on_headings + _split_into_chunks（≥50/≤3200 chars）
+- [x] `tools/neo4j_client.py` — 加 create_document/create_chunks/link_entities_to_chunks/update_node_summary_md/query_fault_with_context；修正 tep_knowledge import → config.tep_schema
+- [x] `agents/pdf_parser_agent.py` — 加 extract_entities_from_chunk()（Gemini + regex fallback）
+- [x] `pipeline/tep_ingestion.py` — 新建 5-stage ingestion pipeline（parse→chunks→extract→link→summary）
+- [x] `tests/test_pdf_parser.py` — 更新 + 加 15 個 unit tests
+- [x] `tests/test_neo4j_client.py` — 新建 10 個 mock-driver tests
+- [x] `tests/test_tep_ingestion.py` — 新建 6 個 pipeline tests
+- [x] manufacturing-kg-agent tests: **108 passed**
+
+### KG Parser 調研 ✅ 2026-05-12
+- [x] 評估 opendataloader-pdf、marker-pdf、Docling 三個 parser
+- [x] 結論：Docling 為 primary（text + 掃描統一處理，97.9% table accuracy，官方支援 Windows）
+- [x] pip install docling（需 KMP_DUPLICATE_LIB_OK=TRUE）
+- [x] 驗證：Docling 正確抽出 DOWNS.pdf Table 8 為 Markdown table（掃描版 OCR）
+- [x] 所有 TEP PDF 已轉成 Markdown → `manufacturing-kg-agent/TEP_docs_md/`（待人工審閱）
+
+### KG 架構決策 ✅ 2026-05-12
+- [x] Parser 優先順序確認：Docling → pymupdf4llm → pymupdf
+- [x] KG 知識來源設計：Seed layer（tep_schema.py hard-code）+ Literature layer（Gemini 抽取）+ Provenance layer（Chunk citation）
+- [x] 待辦：看完 Docling Markdown 品質後設計 LLM 結構化 prompt（C 方案）
+
+### KG Phase A：分層過濾架構（Section Classifier）✅ 2026-05-13
+- [x] `pipeline/section_classifier.py` — `classify_section()` rule-based 分類（零 LLM 成本）
+  - "skip"：References / TOC / Bibliography / Acknowledgements → 不存 Neo4j，不呼叫 Gemini
+  - "table_data"：Markdown table（>20 pipe chars）→ 存 Neo4j，跳過 Gemini entity extraction
+  - "definition"：heading 含 fault/idv/description 等 → Gemini entity extraction
+  - "causal"：content 含 ≥2 個因果詞 → Gemini entity extraction（Phase B 升級為 CAUSES edges）
+  - "narrative"：其餘 → Gemini entity extraction
+- [x] `tests/test_section_classifier.py` — 24 tests（TDD 先行）
+- [x] `pipeline/tep_ingestion.py` — 加入分類過濾
+  - Stage 2：只存 storable（non-skip）chunks
+  - Stage 3：只對 extractable（non-skip, non-table_data）呼叫 Gemini
+  - log 顯示：total → storable / skip / table_data / extractable 分布
+- [x] `tools/neo4j_client.py` `create_chunks()` — 加存 `section_type` 屬性
+- [x] manufacturing-kg-agent tests：**142 passed**（無退步）
+- 預期效果：TEP PDF ~25% Gemini call 節省；企業 500 頁 PDF ~50-60%
+
+### KG Phase B 計劃（待實作 — 論文 KG 章節時做）
+**時機**：KG-5 完成並 end-to-end 跑通後，寫論文 KG 章節時
+**目標**：從「RAG with graph wrapper」升級為真正的 KG（可方向推理）
+**工作量**：約 2 天
+
+```
+現在的查詢（RAG-with-graph）：
+  MATCH (f:Fault)-[:MENTIONED_IN]->(c:Chunk)
+  RETURN c.content_md  ← ME 再讀文字推理
+
+Phase B 後的查詢（真正 KG）：
+  MATCH (f:Fault {name:"IDV_4"})-[r:CAUSES]->(m:Measurement)
+  RETURN m.name, r.direction  ← 直接：XMEAS_9 increases, XMEAS_10 decreases
+```
+
+**需要新建**：
+- `extract_causal_triples()` in `pdf_parser_agent.py`（Gemini prompt for causal sections）
+- Neo4j `CAUSES {direction, magnitude}` 邊
+- `query_fault_causal_chain()` in `neo4j_client.py`
+- ME agent 方向推理邏輯（observed direction vs predicted direction → confidence）
 
 ### T3-P9：Retry + Circuit Breaker ✅ 2026-05-12
 - [x] `tests/integration/eval_t3p9.py` — 5 tests（retry/reraise/429/no-retry/source check）
