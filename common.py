@@ -1,8 +1,10 @@
 import os, time, json, traceback, operator, copy, uuid, random, hashlib
-from typing import TypedDict, Annotated, List, Dict, Any, Optional
+from typing import TypedDict, Annotated, List, Dict, Any, Optional, Callable
 from langchain_core.messages import BaseMessage, HumanMessage, AIMessage, ToolMessage
 from langchain_google_genai import ChatGoogleGenerativeAI
 import atexit, signal
+from tenacity import retry, retry_if_exception_type, wait_exponential, stop_after_attempt
+from google.api_core.exceptions import ServiceUnavailable, ResourceExhausted
 
 
 # ===== LLM config from env =====
@@ -73,6 +75,19 @@ def set_global_seeds(seed: int) -> None:
     except Exception:
         pass
     # 其他框架（如 torch）可在這裡加
+
+@retry(
+    retry=retry_if_exception_type((ServiceUnavailable, ResourceExhausted)),
+    wait=wait_exponential(multiplier=1, min=1, max=60),
+    stop=stop_after_attempt(3),
+    reraise=True,
+)
+def _retry_call(fn: Callable, inputs):
+    return fn(inputs)
+
+def invoke_with_retry(fn: Callable, inputs):
+    """Call fn(inputs) with exponential backoff on Gemini 503/429 errors."""
+    return _retry_call(fn, inputs)
 
 def dbg(*args):
     if VERBOSE:

@@ -1,6 +1,6 @@
 # PROGRESS.md — 重構進度追蹤
 
-## 目前狀態：Production Upgrade Tier 1 進行中 — T1-P1 完成 ✅
+## 目前狀態：Production Upgrade Tier 3 進行中 — T3-P9 完成 ✅
 
 ## 🔴 下一個動作（新 session 直接從這裡開始）
 
@@ -15,9 +15,10 @@ Production Upgrade Tier 2 + 3（T2-P5/P6/P7/P9 全部完成 ✅）。
 
 之後：T3-P9（retry）→ T3-P10（eval pipeline）→ T3-P11（run report）→ T3-P12（delegation contract）
 
-T2-P8 已完成，下一個：T3-P9 — tenacity retry wrapper
-  先建：tests/integration/eval_t3p9.py（mock API error）
-  實作：common.py 加 @retry wrapper for Gemini 503/429
+T3-P9 已完成，下一個：T3-P10 — Golden Dataset Eval Pipeline
+  先建：eval/golden_qa.json（5 條測試 QA）
+  實作：eval/run_eval.py（跑 golden QA，輸出 results.json）
+  驗收：eval/regression_gate.py（DS verdict ≥70%，ME citation ≥0.3）
 ```
 
 **接線順序（依賴關係）：**
@@ -108,7 +109,7 @@ T2-P8 已完成，下一個：T3-P9 — tenacity retry wrapper
 
 ## Test Status
 ```
-pytest tests/ → 63 passed (2026-05-08)
+pytest tests/ → 63 passed (2026-05-12)
   test_structured_outputs.py  14/14
   test_context_assembler.py   14/14
   test_llm_harness.py         12/12
@@ -179,6 +180,11 @@ pytest tests/ → 63 passed (2026-05-08)
 - [x] `tests/integration/eval_t2p8.py` — 4 tests（basic/timeout/syntax error/tool interface）
 - [x] `ds_tools.py` `_execute_python_subprocess()` — subprocess 隔離 + timeout
 - [x] `execute_python_code` @tool 改用 subprocess，移除 langchain_experimental 依賴
+- [x] pytest regression：63 passed（無退步）
+
+### T3-P9：Retry + Circuit Breaker ✅ 2026-05-12
+- [x] `tests/integration/eval_t3p9.py` — 5 tests（retry/reraise/429/no-retry/source check）
+- [x] `common.py` 加 `invoke_with_retry()` — tenacity @retry on ServiceUnavailable + ResourceExhausted，wait_exponential(min=1,max=60)，stop_after_attempt(3)
 - [x] pytest regression：63 passed（無退步）
 
 ---
