@@ -398,7 +398,8 @@ def _exec_one_tool(name: str, args: Dict[str, Any], state: Dict[str, Any]) -> Di
                 question=args.get("question", ""),
                 state=state,
                 topic_id=args.get("topic_id"),
-                owner=args.get("owner")
+                owner=args.get("owner"),
+                success_criteria=args.get("success_criteria"),
             )
 
             # 4) 顯式記交接事件（並帶 meta）
@@ -418,7 +419,8 @@ def _exec_one_tool(name: str, args: Dict[str, Any], state: Dict[str, Any]) -> Di
                 task=args.get("task", ""),
                 state=state,
                 topic_id=args.get("topic_id"),
-                owner=args.get("owner")
+                owner=args.get("owner"),
+                success_criteria=args.get("success_criteria"),
             )
 
             emit_delegate_event(
@@ -437,7 +439,8 @@ def _exec_one_tool(name: str, args: Dict[str, Any], state: Dict[str, Any]) -> Di
                 task=args.get("task", ""),
                 state=state,
                 topic_id=args.get("topic_id"),
-                owner=args.get("owner")
+                owner=args.get("owner"),
+                success_criteria=args.get("success_criteria"),
             )
 
             emit_delegate_event(

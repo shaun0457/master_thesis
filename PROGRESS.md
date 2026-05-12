@@ -1,6 +1,6 @@
 # PROGRESS.md — 重構進度追蹤
 
-## 目前狀態：Production Upgrade Tier 3 進行中 — T3-P11 完成 ✅
+## 目前狀態：Production Upgrade Tier 3 進行中 — T3-P12 完成 ✅
 
 ## 🔴 下一個動作（新 session 直接從這裡開始）
 
@@ -15,10 +15,9 @@ Production Upgrade Tier 2 + 3（T2-P5/P6/P7/P9 全部完成 ✅）。
 
 之後：T3-P9（retry）→ T3-P10（eval pipeline）→ T3-P11（run report）→ T3-P12（delegation contract）
 
-T3-P11 已完成，下一個：T3-P12 — Delegation Contract
-  實作：supervisor_tools.py 加 success_criteria 欄位到 delegate_task tool
-  實作：delegate_tools.py _invoke_stage1 anchor 加入 [TASK CONTRACT] 區塊
-  驗收：eval_t3p12.py 驗證 anchor 包含 success_criteria
+T3-P12 已完成，下一個：T3-P13 — Versioned Prompt YAML（或停在此處視需求）
+  計劃：prompts/v1/cores.yaml + context_assembler.py YAML-backed system prompts
+  依賴：context_assembler.py 目前 hard-coded；可選升級
 ```
 
 **接線順序（依賴關係）：**
@@ -180,6 +179,13 @@ pytest tests/ → 63 passed (2026-05-12)
 - [x] `tests/integration/eval_t2p8.py` — 4 tests（basic/timeout/syntax error/tool interface）
 - [x] `ds_tools.py` `_execute_python_subprocess()` — subprocess 隔離 + timeout
 - [x] `execute_python_code` @tool 改用 subprocess，移除 langchain_experimental 依賴
+- [x] pytest regression：63 passed（無退步）
+
+### T3-P12：Delegation Contract ✅ 2026-05-12
+- [x] `supervisor_tools.py` — 3 個 delegate tool Args 加 `success_criteria: Optional[str]` 欄位
+- [x] `delegate_tools.py` — `_format_task_contract()` helper；`_run_subgraph` + `_invoke_stage1` 加 `success_criteria` 參數；anchor 改為 `bb_index + [TASK CONTRACT]`
+- [x] `router.py` — `_exec_one_tool` 把 `args.get("success_criteria")` 傳進三個 delegate 函數
+- [x] `tests/integration/eval_t3p12.py` — 5 tests（全通過）
 - [x] pytest regression：63 passed（無退步）
 
 ### T3-P11：Cost Tracking + Run Report ✅ 2026-05-12

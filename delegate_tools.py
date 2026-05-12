@@ -18,6 +18,14 @@ from run_logger import emit_bb_write, emit_bb_read, note_tool_call
 POLICY = 'minimal'
 
 
+def _format_task_contract(task_text: str, success_criteria: Optional[str] = None) -> str:
+    """Build a [TASK CONTRACT] block so the sub-agent knows what 'done' looks like."""
+    lines = ["[TASK CONTRACT]", f"Task: {task_text.strip()}"]
+    if success_criteria and success_criteria.strip():
+        lines.append(f"Success criteria: {success_criteria.strip()}")
+    return "\n".join(lines)
+
+
 def _format_bb_index(blackboard: dict) -> str:
     """Produce a compact [BLACKBOARD INDEX] summary of current blackboard state."""
     facts = (blackboard or {}).get("facts", [])
@@ -616,7 +624,8 @@ _GRAPH_CACHE = {}
 #
 #     return graph.invoke(sub_state)
 
-def _invoke_stage1(agent: str, intro_msgs: List[HumanMessage], extra_tools: List, state: Dict[str, Any]):
+def _invoke_stage1(agent: str, intro_msgs: List[HumanMessage], extra_tools: List, state: Dict[str, Any],
+                   success_criteria: Optional[str] = None):
     # 固定 policy 與取得角色卡
     policy = POLICY
     role_card_prompt = get_system_prompt(agent, policy)
@@ -709,12 +718,13 @@ def _invoke_stage1(agent: str, intro_msgs: List[HumanMessage], extra_tools: List
     if state.get("db_url"):
         os.environ["DATABASE_URL"] = state["db_url"]
 
-    # === Anchor 方案：bb_index + task 作為最後一則 HumanMessage，不被壓縮 ===
+    # === Anchor 方案：bb_index + task contract 作為最後一則 HumanMessage，不被壓縮 ===
     from context_assembler import DynamicContextAssembler as _DCA
     _ca = _DCA()
     task_text = intro_msgs[-1].content if intro_msgs else "Please proceed with the delegated task."
     bb_index = _format_bb_index(state.get("blackboard", {}))
-    anchor_msg = HumanMessage(content=f"{bb_index}\n\n{task_text}")
+    contract = _format_task_contract(task_text, success_criteria)
+    anchor_msg = HumanMessage(content=f"{bb_index}\n\n{contract}")
     history_msgs = state.get("messages", [])
     compressed_history = _ca.compress_messages(history_msgs, target_tokens=6000)
     msgs = compressed_history + [anchor_msg]  # anchor 永遠在最後，不被截斷
@@ -911,7 +921,8 @@ def _run_subgraph(agent: str,
                   *,
                   topic_id: Optional[str] = None,
                   owner: Optional[str] = None,
-                  injected_tools: Optional[List[Any]] = None) -> Dict[str, Any]:
+                  injected_tools: Optional[List[Any]] = None,
+                  success_criteria: Optional[str] = None) -> Dict[str, Any]:
     """統一的子圖執行器：把外部注入的工具清單（黑板+P2P）傳進 Stage1"""
 
     # 同步 meta → env；固定亂數
@@ -940,8 +951,8 @@ def _run_subgraph(agent: str,
 
     try:
         with rl.agent_node(agent=agent, task_id=task_id):
-            # 關鍵：把呼叫端準備好的工具（黑板+P2P）直接傳進去
-            out_state = _invoke_stage1(agent, intro_messages, injected_tools or [], state)
+            out_state = _invoke_stage1(agent, intro_messages, injected_tools or [], state,
+                                       success_criteria=success_criteria)
         rl.close_task(task_id, status="done")
     except Exception as e:
         rl.close_task(task_id, status="failed")
@@ -1304,7 +1315,8 @@ def _summarize_out(agent: str, out_state: Dict[str, Any], max_items: int = 4) ->
 # --- paste to: delegate_tools.py (replace these three functions) ---
 def delegate_to_me(question: str, state: Dict[str, Any],
                    topic_id: Optional[str] = None,
-                   owner: Optional[str] = None) -> Dict[str, Any]:
+                   owner: Optional[str] = None,
+                   success_criteria: Optional[str] = None) -> Dict[str, Any]:
     """ME 子圖：帶 topic/owner 跑，注入 P2P 工具；回合結束後把委派請求記成事件"""
     intro = "You are the Machine Expert. Use your RAG and blackboard tools to answer the question."
     p2p_tools, p2p_box = make_blackboard_tools(state, agent_name="ME")
@@ -1318,7 +1330,8 @@ def delegate_to_me(question: str, state: Dict[str, Any],
         out_state = _run_subgraph("ME", state, question, intro,
                                   topic_id=_topic_from(state, topic_id),
                                   owner=_owner_from(state, owner),
-                                  injected_tools=p2p_tools)
+                                  injected_tools=p2p_tools,
+                                  success_criteria=success_criteria)
         # 將本回合提出的 P2P 請求一併回傳
         result = {
             "agent": "ME",
@@ -1337,7 +1350,8 @@ def delegate_to_me(question: str, state: Dict[str, Any],
 
 def delegate_to_de(task: str, state: Dict[str, Any],
                    topic_id: Optional[str] = None,
-                   owner: Optional[str] = None) -> Dict[str, Any]:
+                   owner: Optional[str] = None,
+                   success_criteria: Optional[str] = None) -> Dict[str, Any]:
     """DE 子圖：注入 P2P 工具；回合結束把委派請求回傳"""
     intro = "You are the Data Engineer. Use your SQL and blackboard tools to fulfill the data request."
     p2p_tools, p2p_box = make_blackboard_tools(state, agent_name="DE")
@@ -1345,7 +1359,8 @@ def delegate_to_de(task: str, state: Dict[str, Any],
         out_state = _run_subgraph("DE", state, task, intro,
                                   topic_id=_topic_from(state, topic_id),
                                   owner=_owner_from(state, owner),
-                                  injected_tools=p2p_tools)
+                                  injected_tools=p2p_tools,
+                                  success_criteria=success_criteria)
         result = {
             "status": "ok",
             "agent": "DE",
@@ -1363,7 +1378,8 @@ def delegate_to_de(task: str, state: Dict[str, Any],
 
 def delegate_to_ds(task: str, state: Dict[str, Any],
                    topic_id: Optional[str] = None,
-                   owner: Optional[str] = None) -> Dict[str, Any]:
+                   owner: Optional[str] = None,
+                   success_criteria: Optional[str] = None) -> Dict[str, Any]:
     """DS 子圖：注入 P2P 工具；回合結束把委派請求回傳"""
     intro = "You are the Data Scientist. Use your Python and blackboard tools to analyze data or fulfill the request."
     p2p_tools, p2p_box = make_blackboard_tools(state, agent_name="DS")
@@ -1371,7 +1387,8 @@ def delegate_to_ds(task: str, state: Dict[str, Any],
         out_state = _run_subgraph("DS", state, task, intro,
                                   topic_id=_topic_from(state, topic_id),
                                   owner=_owner_from(state, owner),
-                                  injected_tools=p2p_tools)
+                                  injected_tools=p2p_tools,
+                                  success_criteria=success_criteria)
         result = {
             "status": "ok",
             "agent": "DS",
