@@ -38,5 +38,21 @@
     "min_keyword_hits": 1,
     "agent_path": ["DS"],
     "notes": "Requires DS to load and compute proportion of IDV==1 rows"
+  },
+  {
+    "id": "gq06",
+    "question": "For Fault 4 (IDV=4) in the TEP process, does reactor temperature XMEAS_9 increase or decrease compared to normal operation?",
+    "expected_keywords": ["increase", "xmeas", "9", "reactor", "temperature", "cooling water"],
+    "min_keyword_hits": 3,
+    "agent_path": ["ME"],
+    "notes": "KG direction reasoning: IDV_4 CAUSES XMEAS_9 increases (strong) — cooling water loss raises reactor temp"
+  },
+  {
+    "id": "gq07",
+    "question": "Which sensors are causally affected by Fault 4 (IDV=4), and in which direction does each one change?",
+    "expected_keywords": ["xmeas_9", "xmeas_7", "increase", "reactor", "pressure", "temperature"],
+    "min_keyword_hits": 3,
+    "agent_path": ["ME"],
+    "notes": "KG causal chain reasoning: IDV_4 → XMEAS_9 increases (strong), XMEAS_7 increases (mild)"
   }
 ]
