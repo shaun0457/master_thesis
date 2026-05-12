@@ -1,6 +1,6 @@
 # PROGRESS.md — 重構進度追蹤
 
-## 目前狀態：KG-Phase-B + Regression Gate 全部完成 ✅ 2026-05-13
+## 目前狀態：KG-Phase-B 完成 ✅，Live eval 揭露 2 個已知 bug 待修（見 Regression Gate）
 
 ## 🔴 下一個動作（新 session 直接從這裡開始）
 
@@ -18,7 +18,8 @@
 
 【MAS 側 — 已完成】
 - [x] 端到端測試（live eval）：7 題 golden_qa.json ✅ 2026-05-13
-- [x] Regression gate 驗收：7/7 PASS，指標見下方表格 ✅ 2026-05-13
+- [x] Regression gate（dry-run）：7/7 PASS ✅ 2026-05-13
+- [ ] Regression gate（live）：0/7 FAIL — 需修 context_assembler.py（faultnumber + ME kg_query_fault 引導）
 ```
 
 **接線順序（依賴關係）：**
@@ -307,13 +308,19 @@ Phase B 後的查詢（真正 KG）：
 
 ---
 
-## Regression Gate（dry-run baseline 2026-05-13）
-| 指標 | 目標 | 實測值 |
-|------|------|--------|
-| keyword_hit_rate 整體通過率 | ≥ 60% | **100%** (7/7) ✅ |
-| ds_verdict 成功率 | ≥ 70% | **100%** (2/2) ✅ |
-| me_citation_coverage 平均 | ≥ 0.3 | **0.50** ✅ |
-| judge_factual_grounding 平均 | ≥ 1 | N/A（dry-run 不呼叫 Judge）|
+## Regression Gate（live eval 2026-05-13）
+| 指標 | 目標 | 實測值（dry-run） | 實測值（live） |
+|------|------|--------|--------|
+| keyword_hit_rate 整體通過率 | ≥ 60% | **100%** (7/7) ✅ | **0%** (0/7) ❌ |
+| ds_verdict 成功率 | ≥ 70% | **100%** (2/2) ✅ | N/A |
+| me_citation_coverage 平均 | ≥ 0.3 | **0.50** ✅ | 0.00 ❌ |
+| judge_factual_grounding 平均 | ≥ 1 | N/A（dry-run）| N/A |
 
-> dry-run baseline：regression_gate.py exit 0，7/7 questions PASS。
-> live eval 需真實 GOOGLE_API_KEY；DS 題曾遇 `faultNumber` vs `faultnumber` 欄位名問題（已知 bug，需修 context_assembler.py DE schema snippet）。
+> **Live eval 診斷（2026-05-13）：** regression_gate.py exit 1，9 issues。
+> 根本原因：
+> 1. **ME agent 未呼叫 kg_query_fault tool**：Supervisor 把 ME 問題委派給 DE，DE 嘗試 SQL 查詢但沒有 KG 答案。ME tool list 已包含 kg_query_fault，但 context_assembler.py ME STATIC_CORE 未充分引導 agent 優先使用此 tool。
+> 2. **DS 題 column name mismatch**：context_assembler DE schema 寫 `faultNumber` 但 DB 實際欄位為 `faultnumber`（小寫），導致 SQL 查詢失敗。
+>
+> **待修項目（下一個 session）：**
+> - [ ] 修 context_assembler.py DE schema：`faultNumber` → `faultnumber`
+> - [ ] 強化 ME STATIC_CORE：加入明確指令「遇到 fault 編號問題時，優先呼叫 kg_query_fault(N)」
