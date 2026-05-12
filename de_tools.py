@@ -14,12 +14,13 @@ from bb_tools import bb_register_dataset_path
 
 
 # DB 连线：现在只在这里定义
-DB_URL = os.environ.get("DATABASE_URL", "sqlite:///tep_database.db")
+# tep_combined.db 包含 IDV=0 (250K rows) + IDV 1-20 (25K rows each)
+DB_URL = os.environ.get("DATABASE_URL", "sqlite:///tep_combined.db")
 ENGINE = create_engine(DB_URL, pool_pre_ping=True)
 FORBIDDEN = re.compile(r"\b(INSERT|UPDATE|DELETE|DROP|ALTER|TRUNCATE|CREATE)\b", re.I)
 
 def _get_db_engine():
-    db_url = os.getenv("DATABASE_URL") or "sqlite:///tep_database.db"
+    db_url = os.getenv("DATABASE_URL") or "sqlite:///tep_combined.db"
     return create_engine(db_url, future=True)
 
 def _to_json_payload(df: pd.DataFrame) -> str:
