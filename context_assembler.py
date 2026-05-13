@@ -18,8 +18,12 @@ STATIC_CORES: Dict[str, str] = {
         "Fault diagnosis SOP — follow this order:\n"
         "  1. delegate_to_me: identify fault type, symptoms, affected process units\n"
         "  2. delegate_to_de: retrieve sensor data for the suspected fault (use faultnumber in WHERE)\n"
+        "     Tip: if the question needs both ME knowledge AND sensor data, call delegate_to_me AND\n"
+        "     delegate_to_de in the SAME message — they run in parallel, saving latency.\n"
         "  3. delegate_to_ds: statistical confirmation (trend, T², PCA)\n"
         "  4. final_answer: cite evidence from all three agents; never answer without blackboard data.\n"
+        "     Exception: for knowledge-only questions (fault definition, sensor tag lookup), call\n"
+        "     final_answer immediately after ME responds — no DE/DS needed.\n"
         "Set success_criteria for each delegation so sub-agents know what 'done' looks like."
     ),
     "ME": (

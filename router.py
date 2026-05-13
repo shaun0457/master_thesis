@@ -1,5 +1,6 @@
 # router.py (最终融合版 - 带安全护栏)
-import json, os, uuid, hashlib
+import json, os, uuid, hashlib, threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any, Dict, Optional, List, Set
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage, ToolMessage
 from delegate_tools import delegate_to_me, delegate_to_de, delegate_to_ds, continue_agent
@@ -24,6 +25,12 @@ MAX_SUMMARY_CHARS = 1000  # 可以适当放宽，因为现在内容更简洁
 _MAX_P2P_HOPS= int(os.getenv("MAX_P2P_HOPS_PER_TURN", "8"))
 _MAX_OPEN_REQS = int(os.getenv("MAX_OPEN_REQS_PER_TURN", "8"))
 MAX_GLOBAL_TOOL_CALLS = int(os.getenv("MAX_GLOBAL_TOOL_CALLS", "25"))
+
+# Plan A: lock guards global_tool_calls counter against parallel increment race
+_metrics_lock = threading.Lock()
+
+# Tool names that may run in parallel when called in the same Supervisor turn
+_PARALLEL_CAPABLE = {"delegate_to_me", "delegate_to_de"}
 
 def _norm_agent_name(s: str) -> str:
     return (s or "").strip().upper()
@@ -599,27 +606,22 @@ def route_and_execute(state: Dict[str, Any]) -> Dict[str, Any]:
     total_p2p_hops = 0
     hit_cap = False  # [ADD] 觸發上限時用來跳出多層迴圈
 
-    for call in last.tool_calls:
+    # Plan A: split calls into parallel-capable and serial groups
+    parallel_calls = [c for c in last.tool_calls if c.get("name") in _PARALLEL_CAPABLE]
+    serial_calls   = [c for c in last.tool_calls if c.get("name") not in _PARALLEL_CAPABLE]
+
+    def _run_one_call(call) -> tuple:
+        """Execute one tool call; return (call, res). Thread-safe for metrics counter."""
         name = call.get("name")
         args = call.get("args") or {}
-
-        # ... 在 for call in last.tool_calls: 迴圈裡，_exec_one_tool 前先判斷：
-        if state["metrics"]["global_tool_calls"] >= MAX_GLOBAL_TOOL_CALLS:
-            warn = {"status": "stopped", "reason": "global_tool_cap_reached", "cap": MAX_GLOBAL_TOOL_CALLS}
-            outputs.append(ToolMessage(name="router", tool_call_id="cap", content=json.dumps(warn, ensure_ascii=False)))
-            state["metrics"]["stop_reason"] = "global_tool_cap_reached"
-            break
-
-        # 主要工具執行
         res = _exec_one_tool(name, args, state)
-
-        # 執行完累加一次
-        state["metrics"]["global_tool_calls"] += 1
-
-        # 吸收本回合 agent 內部收集到的 P2P 請求（若有）
+        with _metrics_lock:
+            state["metrics"]["global_tool_calls"] += 1
         _consume_p2p_requests(res, state)
+        return call, res
 
-        # 回傳給 Supervisor 的瘦身內容
+    def _append_output(call, res):
+        name = call.get("name")
         raw_summary = res.get("summary")
         slim_payload = {
             "agent": res.get("agent"),
@@ -628,17 +630,49 @@ def route_and_execute(state: Dict[str, Any]) -> Dict[str, Any]:
             "delegate_requests": res.get("delegate_requests"),
         }
         slim_payload = {k: v for k, v in slim_payload.items() if v is not None}
-
         if isinstance(raw_summary, str) and len(raw_summary) > MAX_SUMMARY_CHARS:
             state.setdefault("violations", []).append(
                 {"kind": "summary_truncated", "agent": res.get("agent"), "original_len": len(raw_summary)}
             )
-
         outputs.append(ToolMessage(
             name=name,
             tool_call_id=call.get("id", "call"),
             content=json.dumps(slim_payload, ensure_ascii=False)
         ))
+
+    # Run parallel-capable calls concurrently (ME + DE in same Supervisor turn)
+    if len(parallel_calls) > 1:
+        if state["metrics"]["global_tool_calls"] >= MAX_GLOBAL_TOOL_CALLS:
+            warn = {"status": "stopped", "reason": "global_tool_cap_reached", "cap": MAX_GLOBAL_TOOL_CALLS}
+            outputs.append(ToolMessage(name="router", tool_call_id="cap", content=json.dumps(warn, ensure_ascii=False)))
+            state["metrics"]["stop_reason"] = "global_tool_cap_reached"
+            hit_cap = True
+        else:
+            with ThreadPoolExecutor(max_workers=len(parallel_calls)) as pool:
+                futures = [pool.submit(_run_one_call, c) for c in parallel_calls]
+                for future in as_completed(futures):
+                    call, res = future.result()
+                    _append_output(call, res)
+    else:
+        # Single parallel call falls through to serial path
+        serial_calls = parallel_calls + serial_calls
+        parallel_calls = []
+
+    for call in ([] if hit_cap else serial_calls):
+        name = call.get("name")
+        args = call.get("args") or {}
+
+        if state["metrics"]["global_tool_calls"] >= MAX_GLOBAL_TOOL_CALLS:
+            warn = {"status": "stopped", "reason": "global_tool_cap_reached", "cap": MAX_GLOBAL_TOOL_CALLS}
+            outputs.append(ToolMessage(name="router", tool_call_id="cap", content=json.dumps(warn, ensure_ascii=False)))
+            state["metrics"]["stop_reason"] = "global_tool_cap_reached"
+            break
+
+        res = _exec_one_tool(name, args, state)
+        with _metrics_lock:
+            state["metrics"]["global_tool_calls"] += 1
+        _consume_p2p_requests(res, state)
+        _append_output(call, res)
 
         # ----------------------------
         # P2P 迴圈（維持你原本邏輯，僅加入去重 + 節流 + JSON-safe）

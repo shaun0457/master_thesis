@@ -93,7 +93,17 @@ def _run_real(item: dict) -> dict:
                 if answer:
                     break
                 if msg.content:
-                    answer = msg.content if isinstance(msg.content, str) else str(msg.content)
+                    c = msg.content
+                    if isinstance(c, str):
+                        answer = c
+                    elif isinstance(c, list):
+                        # Gemini content blocks: [{"type": "text", "text": "..."}]
+                        answer = " ".join(
+                            part.get("text", "") for part in c
+                            if isinstance(part, dict)
+                        )
+                    else:
+                        answer = str(c)
                     break
 
         metrics = final_state.get("metrics", {})

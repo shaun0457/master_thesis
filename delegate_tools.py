@@ -18,6 +18,77 @@ from run_logger import emit_bb_write, emit_bb_read, note_tool_call
 POLICY = 'minimal'
 
 
+# ---------------------------------------------------------------------------
+# Plan D: ME → BB structured fault facts write
+# ---------------------------------------------------------------------------
+
+def _extract_and_write_me_fault_facts(out_state: dict) -> None:
+    """Scan ME subgraph ToolMessages for kg_query_fault results; write structured facts to BB."""
+    from langchain_core.messages import ToolMessage
+    run_id = os.environ.get("RUN_ID")
+    for msg in out_state.get("messages", []):
+        if not (isinstance(msg, ToolMessage) and getattr(msg, "name", "") == "kg_query_fault"):
+            continue
+        try:
+            data = json.loads(msg.content)
+            fault_id = data.get("fault_id")
+            if fault_id is None:
+                continue
+            sensors = data.get("diagnostic_sensors", [])
+            sensor_cols = ", ".join(s["column"] for s in sensors if isinstance(s, dict))
+            structured = {
+                "agent": "ME",
+                "source_tool": "kg_query_fault",
+                "fault_id": fault_id,
+                "description": data.get("description", ""),
+                "diagnostic_sensors": sensors,
+                "claim": (
+                    f"IDV_{fault_id}: {data.get('description', '')}."
+                    + (f" Diagnostic sensors: {sensor_cols}" if sensor_cols else "")
+                ),
+            }
+            bb_tools.bb_add_facts(
+                run_id=run_id,
+                facts=[structured],
+                agent="ME",
+                source_tool="kg_query_fault",
+            )
+        except Exception:
+            pass
+
+
+# ---------------------------------------------------------------------------
+# Plan B: DE reads ME fault facts for context injection
+# ---------------------------------------------------------------------------
+
+def _read_me_fault_facts() -> str:
+    """Read ME-written kg_query_fault facts from BB. Returns formatted string or ''."""
+    run_id = os.environ.get("RUN_ID")
+    if not run_id:
+        return ""
+    try:
+        reg = bb_tools._load(run_id)
+        me_facts = [
+            f for f in reg.get("facts", [])
+            if isinstance(f, dict)
+            and f.get("agent") == "ME"
+            and f.get("source_tool") == "kg_query_fault"
+        ]
+        if not me_facts:
+            return ""
+        lines = []
+        for f in me_facts:
+            sensors = [s["column"] for s in f.get("diagnostic_sensors", []) if isinstance(s, dict)]
+            lines.append(f"- IDV_{f['fault_id']}: {f.get('description', '')}")
+            if sensors:
+                lines.append(f"  → query these sensors: {', '.join(sensors)}"
+                             f" with faultnumber={f['fault_id']}")
+                lines.append("  → use deliver_dataframe (NOT just COUNT)")
+        return "\n".join(lines)
+    except Exception:
+        return ""
+
+
 def _format_task_contract(task_text: str, success_criteria: Optional[str] = None) -> str:
     """Build a [TASK CONTRACT] block so the sub-agent knows what 'done' looks like."""
     lines = ["[TASK CONTRACT]", f"Task: {task_text.strip()}"]
@@ -1337,6 +1408,7 @@ def delegate_to_me(question: str, state: Dict[str, Any],
                                   owner=_owner_from(state, owner),
                                   injected_tools=p2p_tools,
                                   success_criteria=success_criteria)
+        _extract_and_write_me_fault_facts(out_state)  # Plan D: write structured facts to BB
         # 將本回合提出的 P2P 請求一併回傳
         result = {
             "agent": "ME",
@@ -1361,6 +1433,9 @@ def delegate_to_de(task: str, state: Dict[str, Any],
     intro = "You are the Data Engineer. Use your SQL and blackboard tools to fulfill the data request."
     p2p_tools, p2p_box = make_blackboard_tools(state, agent_name="DE")
     with _TopicCtx(state, topic_id, owner):
+        me_facts = _read_me_fault_facts()  # Plan B: inject ME fault context
+        if me_facts:
+            task = f"[Context from ME]\n{me_facts}\n\n{task}"
         out_state = _run_subgraph("DE", state, task, intro,
                                   topic_id=_topic_from(state, topic_id),
                                   owner=_owner_from(state, owner),
