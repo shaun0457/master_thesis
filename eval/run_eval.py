@@ -17,10 +17,17 @@ Usage:
 """
 import os
 import sys
+import io
 import json
 import time
 import argparse
 from pathlib import Path
+
+# Force UTF-8 stdout/stderr to prevent cp950 encoding errors on Windows
+if hasattr(sys.stdout, "buffer"):
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
+if hasattr(sys.stderr, "buffer"):
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
 
 REPO_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(REPO_ROOT))
