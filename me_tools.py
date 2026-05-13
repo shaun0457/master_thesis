@@ -350,13 +350,17 @@ hits：
     chosen = [hits[i] for i in chosen_idx]
 
     # ---- 建立帶頁碼的 evidence context ----
+    # Accepts both RAG-format (chunk.text/doc_id) and KG-format (content_md/source_doc)
     ctx = []
     for h in chosen:
         ch = h.get("chunk") or {}
-        text = ch.get("text") or h.get("text") or ""
-        doc  = ch.get("doc_id") or h.get("doc_id") or "unknown.pdf"
-        page = ch.get("page")   or h.get("page")   or -1
-        ctx.append(f"[{doc} p.{int(page)}]\n{text}")
+        text = (ch.get("text") or h.get("text")
+                or h.get("content_md") or ch.get("content_md") or "")
+        doc  = (ch.get("doc_id") or h.get("doc_id")
+                or h.get("source_doc") or "unknown.pdf")
+        page = ch.get("page") or h.get("page") or -1
+        if text:
+            ctx.append(f"[{doc} p.{int(page)}]\n{text}")
     context = "\n\n".join(ctx)
 
     # ---- 合成（把 seed 傳給 LLM，如 llm 支援 with_config/seed）----

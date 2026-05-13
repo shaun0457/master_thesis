@@ -1164,6 +1164,20 @@ def _summarize_out(agent: str, out_state: Dict[str, Any], max_items: int = 4) ->
             pass
 
     summary = "\n".join(lines).strip()
+
+    # (5) Final fallback: last AIMessage.content (ME's synthesized thought)
+    if not summary:
+        for msg in reversed(out_state.get("messages", [])):
+            if isinstance(msg, AIMessage):
+                c = getattr(msg, "content", "") or ""
+                if isinstance(c, list):
+                    c = " ".join(p.get("text", "") for p in c if isinstance(p, dict))
+                c = c.strip()
+                # Skip empty, JSON-only, or tool-routing messages
+                if len(c) >= 20 and not c.startswith("{") and "tool_call" not in c.lower():
+                    summary = c[:1500]
+                    break
+
     return summary or f"{agent} finished with no extractable summary."
 
 
