@@ -7,7 +7,6 @@ import scipy.sparse as sp
 from typing import List, Dict, Any, Optional
 
 import fitz
-import camelot
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
@@ -109,6 +108,7 @@ def build_index(doc_paths: List[str]) -> DocIndex:
                 for i, page in enumerate(doc, start=1):
                     full_text = page.get_text("text") or ""
                     try:
+                        import camelot  # lazy import — optional dependency
                         tables = camelot.read_pdf(path, pages=str(i), flavor='lattice')
                         if tables.n > 0:
                             print(f"    > 在第 {i} 頁找到 {tables.n} 個表格。")
