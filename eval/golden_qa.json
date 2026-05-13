@@ -54,5 +54,21 @@
     "min_keyword_hits": 3,
     "agent_path": ["ME"],
     "notes": "KG causal chain reasoning: IDV_4 → XMEAS_9 increases (strong), XMEAS_7 increases (mild)"
+  },
+  {
+    "id": "gq08",
+    "question": "What type of disturbance is IDV 1 (Fault 1) in the TEP process, and which feed flow sensor is primarily affected?",
+    "expected_keywords": ["step", "feed", "ratio", "stream", "composition"],
+    "min_keyword_hits": 2,
+    "agent_path": ["ME"],
+    "notes": "KG knowledge: IDV 1 is a step change in A/C feed ratio with B composition constant (stream 4), affects feed flow sensors XMEAS(1-4)"
+  },
+  {
+    "id": "gq09",
+    "question": "For IDV 11 in the TEP process, what is the primary fault mechanism and which reactor sensor is most affected?",
+    "expected_keywords": ["reactor", "cooling", "valve", "temperature", "stiction"],
+    "min_keyword_hits": 2,
+    "agent_path": ["ME"],
+    "notes": "KG knowledge: IDV 11 is reactor cooling water valve stiction; primary sensor XMEAS(9) reactor temperature"
   }
 ]

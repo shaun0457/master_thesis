@@ -130,7 +130,7 @@ git commit -m "feat: <step description>"
 cd MT-phase-2
 pytest tests/ -v --tb=short -q
 ```
-**預期：72 passed**（KG-5 完成後）
+**預期：81 passed**（MAS Opt Plan A+B+D 完成後）
 
 ## 如何執行系統
 ```bash

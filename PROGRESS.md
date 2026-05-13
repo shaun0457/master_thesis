@@ -1,28 +1,25 @@
 # PROGRESS.md — 重構進度追蹤
 
-## 目前狀態：MAS Opt Plan A+B+D 完成 ✅，Gemini 配額耗盡等待重置（2026-05-14）
+## 目前狀態：Live Eval 6/7 PASS ✅（2026-05-13），gq01 Supervisor 未呼叫 final_answer
 
 ## 🔴 下一個動作（新 session 直接從這裡開始）
 
 ```
-【KG 側 — 全部完成】
-- [x] KG-1~4：PDF ingestion + AuraDB → 158 chunks / 191 MENTIONED_IN ✅ 2026-05-12
-- [x] KG-Phase-A：Section Classifier（分層過濾）✅ 2026-05-13
-- [x] KG-5：me_tools.kg_query_fault 接線 Neo4j（neo4j_kg.py + fallback）✅ 2026-05-13
-- [x] KG-Phase-B：CAUSES {direction} edges（真正的 KG）✅ 2026-05-13
-
-【MAS Opt — 完成 2026-05-13】
-- [x] Plan D：_extract_and_write_me_fault_facts — ME 結束後自動寫結構化 fault facts 到 BB
-- [x] Plan B：_read_me_fault_facts + delegate_to_de context injection — DE 自動收到診斷 sensor 清單 + deliver_dataframe 提示
-- [x] Plan A：ThreadPoolExecutor parallel ME+DE + _metrics_lock race condition guard
-- [x] Supervisor prompt 更新：並行提示 + 知識題 final_answer 捷徑（gq02/04/06 優化）
-- [x] eval/run_eval.py：Gemini content-blocks list 解析修復（gq07）
-- [x] TDD：9 個新 unit tests → 共 81 passed
+【Eval 現況 2026-05-13 (Run brd2rorm9)】
+- [x] gq01: FAIL（answer 空 — Supervisor 未呼叫 final_answer，ME 合成文字未被擷取）
+- [x] gq02: PASS (hit=1.00)
+- [x] gq03: PASS (hit=0.75) ← DE SQL path(4) fix 生效
+- [x] gq04: PASS (hit=1.00) ← ME 知道 21 IDVs
+- [x] gq05: PASS (hit=0.60) ← DE SQL path(4) fix 生效
+- [x] gq06: PASS (hit=0.83)
+- [x] gq07: PASS (hit=0.50)
 
 【待完成】
-- [ ] Regression gate（live）：等 Gemini 配額重置後跑（2026-05-14 ~10am）
-  - 上次 bjgo4p286 run: gq01 PASS（有完整 trace），其餘因配額耗盡失敗
-  - 預期修後: ME 題 (gq01/02/04/06/07) 全 PASS；DE context injection → gq03/05 改善
+- [ ] gq01 修復：Supervisor 在 ME 沒有 evidence 時不呼叫 final_answer → 空答案
+  根本原因：ME synthesize_and_cite 回傳 cited_answer，但 Supervisor 可能
+  沒有看到足夠證據，或直接結束沒有 tool_call。需要看 trace。
+- [ ] 擴充測試：跑 gq08/gq09（新加的 KG 知識題）
+- [ ] 更新 CLAUDE.md test count → 81
 ```
 
 **接線順序（依賴關係）：**
@@ -311,19 +308,15 @@ Phase B 後的查詢（真正 KG）：
 
 ---
 
-## Regression Gate（live eval 2026-05-13）
-| 指標 | 目標 | 實測值（dry-run） | 實測值（live） |
-|------|------|--------|--------|
-| keyword_hit_rate 整體通過率 | ≥ 60% | **100%** (7/7) ✅ | **0%** (0/7) ❌ |
-| ds_verdict 成功率 | ≥ 70% | **100%** (2/2) ✅ | N/A |
-| me_citation_coverage 平均 | ≥ 0.3 | **0.50** ✅ | 0.00 ❌ |
-| judge_factual_grounding 平均 | ≥ 1 | N/A（dry-run）| N/A |
+## Regression Gate（live eval）
+| 指標 | 目標 | Run brd2rorm9（2026-05-13） |
+|------|------|--------|
+| keyword_hit_rate 整體通過率 | ≥ 60% | **86%** (6/7) ✅ |
+| gq01 root-cause | PASS | ❌ answer 空（Supervisor 未呼叫 final_answer） |
+| gq02-07 ME/DE/DS 題 | PASS | ✅ 全 PASS |
 
-> **Live eval 診斷（2026-05-13）：** regression_gate.py exit 1，9 issues。
-> 根本原因：
-> 1. **ME agent 未呼叫 kg_query_fault tool**：Supervisor 把 ME 問題委派給 DE，DE 嘗試 SQL 查詢但沒有 KG 答案。ME tool list 已包含 kg_query_fault，但 context_assembler.py ME STATIC_CORE 未充分引導 agent 優先使用此 tool。
-> 2. **DS 題 column name mismatch**：context_assembler DE schema 寫 `faultNumber` 但 DB 實際欄位為 `faultnumber`（小寫），導致 SQL 查詢失敗。
->
-> **待修項目（下一個 session）：**
-> - [ ] 修 context_assembler.py DE schema：`faultNumber` → `faultnumber`
-> - [ ] 強化 ME STATIC_CORE：加入明確指令「遇到 fault 編號問題時，優先呼叫 kg_query_fault(N)」
+> **MAS Opt 修復（2026-05-13）：**
+> 1. `delegate_tools._summarize_out` path(4)：提取 DE sql_db_query ToolMessage 結果 → 解決 gq03/gq05 GraphRecursionError
+> 2. `context_assembler` ME prompt：明確 kg_query_fault → synthesize_and_cite 工作流 + 21 IDVs 事實 → gq04 PASS
+> 3. `context_assembler` Supervisor：加 Exception B（純資料題跳過 DS）→ gq03/gq05 不再無限委派
+> 4. `me_tools.synthesize_and_cite`：加 description/summary_md fallback 路徑 → 改善 gq01 partial
