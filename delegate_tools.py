@@ -1321,13 +1321,18 @@ def delegate_to_me(question: str, state: Dict[str, Any],
     intro = "You are the Machine Expert. Use your RAG and blackboard tools to answer the question."
     p2p_tools, p2p_box = make_blackboard_tools(state, agent_name="ME")
     with _TopicCtx(state, topic_id, owner):
+        rag_note = ""
         try:
             import me_tools
             me_tools.init_me_index_from_dir(state.get("pdf_dir", "./TEP_docs"))
         except Exception as e:
-            return {"agent": "ME", "summary": f"Init RAG failed: {e}", "status": "error",
-                    "topic_id": _topic_from(state, topic_id), "owner": _owner_from(state, owner)}
-        out_state = _run_subgraph("ME", state, question, intro,
+            rag_note = (
+                f"\n\n[System] RAG document index unavailable ({type(e).__name__})."
+                " Use kg_query_fault(N) as primary knowledge source."
+                " Blackboard and KG tools remain available."
+            )
+        task_with_rag_status = question + rag_note
+        out_state = _run_subgraph("ME", state, task_with_rag_status, intro,
                                   topic_id=_topic_from(state, topic_id),
                                   owner=_owner_from(state, owner),
                                   injected_tools=p2p_tools,
