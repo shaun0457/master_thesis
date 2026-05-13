@@ -81,13 +81,20 @@ def _run_real(item: dict) -> dict:
         final_state = graph.invoke(init_state)
         latency_ms = (time.time() - t0) * 1000
 
-        # Extract last AI message as answer
+        # Extract answer: prefer final_answer tool_call args, fall back to AIMessage.content
+        from langchain_core.messages import AIMessage
         answer = ""
         for msg in reversed(final_state.get("messages", [])):
-            from langchain_core.messages import AIMessage
-            if isinstance(msg, AIMessage) and msg.content:
-                answer = msg.content if isinstance(msg.content, str) else str(msg.content)
-                break
+            if isinstance(msg, AIMessage):
+                for tc in (getattr(msg, "tool_calls", None) or []):
+                    if tc.get("name") == "final_answer":
+                        answer = tc.get("args", {}).get("answer", "")
+                        break
+                if answer:
+                    break
+                if msg.content:
+                    answer = msg.content if isinstance(msg.content, str) else str(msg.content)
+                    break
 
         metrics = final_state.get("metrics", {})
         hits = _keyword_hits(answer, item["expected_keywords"])
