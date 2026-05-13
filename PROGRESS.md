@@ -1,25 +1,26 @@
 # PROGRESS.md — 重構進度追蹤
 
-## 目前狀態：Live Eval 6/7 PASS ✅（2026-05-13），gq01 Supervisor 未呼叫 final_answer
+## 目前狀態：Live Eval 9/9 PASS ✅（2026-05-13）
 
 ## 🔴 下一個動作（新 session 直接從這裡開始）
 
 ```
-【Eval 現況 2026-05-13 (Run brd2rorm9)】
-- [x] gq01: FAIL（answer 空 — Supervisor 未呼叫 final_answer，ME 合成文字未被擷取）
-- [x] gq02: PASS (hit=1.00)
-- [x] gq03: PASS (hit=0.75) ← DE SQL path(4) fix 生效
-- [x] gq04: PASS (hit=1.00) ← ME 知道 21 IDVs
-- [x] gq05: PASS (hit=0.60) ← DE SQL path(4) fix 生效
-- [x] gq06: PASS (hit=0.83)
-- [x] gq07: PASS (hit=0.50)
+【Eval 最終結果（2026-05-13）】
+gq01: PASS (hit=0.80) ← UTF-8 fix + ME workflow
+gq02: PASS (hit=0.50)
+gq03: PASS (hit=0.75) ← DE SQL path(4) fix
+gq04: PASS (hit=1.00) ← 21 IDVs fact
+gq05: PASS (hit=0.60) ← DE SQL path(4) fix
+gq06: PASS (hit=0.83)
+gq07: PASS (hit=0.50)
+gq08: PASS (hit=1.00) ← KG 新題（IDV 1 feed ratio）
+gq09: PASS (hit=0.60) ← KG 新題（IDV 11 reactor cooling）
+9/9 PASS
 
-【待完成】
-- [ ] gq01 修復：Supervisor 在 ME 沒有 evidence 時不呼叫 final_answer → 空答案
-  根本原因：ME synthesize_and_cite 回傳 cited_answer，但 Supervisor 可能
-  沒有看到足夠證據，或直接結束沒有 tool_call。需要看 trace。
-- [ ] 擴充測試：跑 gq08/gq09（新加的 KG 知識題）
-- [ ] 更新 CLAUDE.md test count → 81
+【可選後續工作】
+- [ ] regression_gate.py：補實測值到 PROGRESS.md
+- [ ] 跑 regression_gate.py 並確認 exit code 0
+- [ ] 調查 gq07 DS execute_python_code f-string syntax error（DS 會自動重試，不影響 PASS）
 ```
 
 **接線順序（依賴關係）：**
@@ -309,11 +310,13 @@ Phase B 後的查詢（真正 KG）：
 ---
 
 ## Regression Gate（live eval）
-| 指標 | 目標 | Run brd2rorm9（2026-05-13） |
+| 指標 | 目標 | Run biim7v6lq（2026-05-13）|
 |------|------|--------|
-| keyword_hit_rate 整體通過率 | ≥ 60% | **86%** (6/7) ✅ |
-| gq01 root-cause | PASS | ❌ answer 空（Supervisor 未呼叫 final_answer） |
-| gq02-07 ME/DE/DS 題 | PASS | ✅ 全 PASS |
+| keyword_hit_rate 整體通過率 | ≥ 60% | **100%** (9/9) ✅ |
+| gq01 root-cause（ME KG）| PASS | ✅ hit=0.80 |
+| gq03/05 pure aggregate（DE SQL）| PASS | ✅ hit=0.75/0.60 |
+| gq04 21 IDVs（ME KG）| PASS | ✅ hit=1.00 |
+| gq08/09 新 KG 題 | PASS | ✅ hit=1.00/0.60 |
 
 > **MAS Opt 修復（2026-05-13）：**
 > 1. `delegate_tools._summarize_out` path(4)：提取 DE sql_db_query ToolMessage 結果 → 解決 gq03/gq05 GraphRecursionError
