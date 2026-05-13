@@ -1,6 +1,6 @@
 # PROGRESS.md — 重構進度追蹤
 
-## 目前狀態：KG-Phase-B 完成 ✅，Live eval 揭露 2 個已知 bug 待修（見 Regression Gate）
+## 目前狀態：MAS Opt Plan A+B+D 完成 ✅，Gemini 配額耗盡等待重置（2026-05-14）
 
 ## 🔴 下一個動作（新 session 直接從這裡開始）
 
@@ -10,16 +10,19 @@
 - [x] KG-Phase-A：Section Classifier（分層過濾）✅ 2026-05-13
 - [x] KG-5：me_tools.kg_query_fault 接線 Neo4j（neo4j_kg.py + fallback）✅ 2026-05-13
 - [x] KG-Phase-B：CAUSES {direction} edges（真正的 KG）✅ 2026-05-13
-  → extract_causal_triples() + _dedup_triples() in pdf_parser_agent.py
-  → create_causes_edges() + query_fault_causal_chain() in neo4j_client.py
-  → populate_causes_knowledge() from TEP_CAUSES_DIRECTIONS (17 edges)
-  → AuraDB live: query_fault_causal_chain(4) → XMEAS_9 increases (strong), XMEAS_7 increases (mild)
-  → scripts/write_causes_edges.py for PDF-based extraction
 
-【MAS 側 — 已完成】
-- [x] 端到端測試（live eval）：7 題 golden_qa.json ✅ 2026-05-13
-- [x] Regression gate（dry-run）：7/7 PASS ✅ 2026-05-13
-- [ ] Regression gate（live）：0/7 FAIL — 需修 context_assembler.py（faultnumber + ME kg_query_fault 引導）
+【MAS Opt — 完成 2026-05-13】
+- [x] Plan D：_extract_and_write_me_fault_facts — ME 結束後自動寫結構化 fault facts 到 BB
+- [x] Plan B：_read_me_fault_facts + delegate_to_de context injection — DE 自動收到診斷 sensor 清單 + deliver_dataframe 提示
+- [x] Plan A：ThreadPoolExecutor parallel ME+DE + _metrics_lock race condition guard
+- [x] Supervisor prompt 更新：並行提示 + 知識題 final_answer 捷徑（gq02/04/06 優化）
+- [x] eval/run_eval.py：Gemini content-blocks list 解析修復（gq07）
+- [x] TDD：9 個新 unit tests → 共 81 passed
+
+【待完成】
+- [ ] Regression gate（live）：等 Gemini 配額重置後跑（2026-05-14 ~10am）
+  - 上次 bjgo4p286 run: gq01 PASS（有完整 trace），其餘因配額耗盡失敗
+  - 預期修後: ME 題 (gq01/02/04/06/07) 全 PASS；DE context injection → gq03/05 改善
 ```
 
 **接線順序（依賴關係）：**
