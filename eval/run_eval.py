@@ -25,6 +25,12 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
+try:
+    from dotenv import load_dotenv
+    load_dotenv(REPO_ROOT / ".env")
+except ImportError:
+    pass
+
 GOLDEN_QA_PATH = Path(__file__).parent / "golden_qa.json"
 RESULTS_PATH   = Path(__file__).parent / "results.json"
 
