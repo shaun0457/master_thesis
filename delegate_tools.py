@@ -1165,6 +1165,28 @@ def _summarize_out(agent: str, out_state: Dict[str, Any], max_items: int = 4) ->
 
     summary = "\n".join(lines).strip()
 
+    # (4) DE: extract SQL query or deliver_dataframe result from ToolMessages
+    if not summary:
+        from langchain_core.messages import ToolMessage as _TM
+        _data_tools = {"sql_db_query", "deliver_dataframe"}
+        for msg in reversed(out_state.get("messages", [])):
+            if isinstance(msg, _TM) and getattr(msg, "name", "") in _data_tools:
+                try:
+                    d = json.loads(msg.content)
+                    if d.get("status") == "ok":
+                        rows = d.get("rows", [])
+                        rc = d.get("rowcount", 0)
+                        cols = d.get("columns", [])
+                        summary = f"SQL result: rowcount={rc}, columns={cols}"
+                        if rows and rc <= 20:
+                            summary += f", rows={json.dumps(rows, ensure_ascii=False)}"
+                        elif rows:
+                            summary += f", first_row={json.dumps(rows[0], ensure_ascii=False)}"
+                except Exception:
+                    summary = (msg.content or "")[:500]
+                if summary:
+                    break
+
     # (5) Final fallback: last AIMessage.content (ME's synthesized thought)
     if not summary:
         for msg in reversed(out_state.get("messages", [])):

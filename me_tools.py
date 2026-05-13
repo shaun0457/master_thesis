@@ -350,17 +350,29 @@ hits：
     chosen = [hits[i] for i in chosen_idx]
 
     # ---- 建立帶頁碼的 evidence context ----
-    # Accepts both RAG-format (chunk.text/doc_id) and KG-format (content_md/source_doc)
+    # Accepts RAG-format (chunk.text/doc_id), KG-format (content_md/source_doc),
+    # and kg_query_fault direct fields (description, summary_md)
     ctx = []
     for h in chosen:
         ch = h.get("chunk") or {}
         text = (ch.get("text") or h.get("text")
-                or h.get("content_md") or ch.get("content_md") or "")
+                or h.get("content_md") or ch.get("content_md")
+                or h.get("summary_md") or "")
         doc  = (ch.get("doc_id") or h.get("doc_id")
                 or h.get("source_doc") or "unknown.pdf")
         page = ch.get("page") or h.get("page") or -1
         if text:
             ctx.append(f"[{doc} p.{int(page)}]\n{text}")
+
+    # If still no context, try top-level description/summary from kg_query_fault result
+    if not ctx:
+        for h in chosen[:3]:
+            desc = h.get("description") or h.get("summary_md") or ""
+            if desc:
+                doc = h.get("source_doc") or h.get("doc_id") or "tep_kg"
+                page = h.get("page") or 1
+                ctx.append(f"[{doc} p.{int(page)}]\n{desc}")
+
     context = "\n\n".join(ctx)
 
     # ---- 合成（把 seed 傳給 LLM，如 llm 支援 with_config/seed）----
