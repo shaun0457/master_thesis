@@ -78,7 +78,7 @@ def _run_real(item: dict) -> dict:
 
     t0 = time.time()
     try:
-        final_state = graph.invoke(init_state)
+        final_state = graph.invoke(init_state, config={"recursion_limit": 50})
         latency_ms = (time.time() - t0) * 1000
 
         # Extract answer: prefer final_answer tool_call args, fall back to AIMessage.content

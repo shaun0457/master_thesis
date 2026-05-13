@@ -48,7 +48,8 @@ STATIC_CORES: Dict[str, str] = {
         "  Fault vs normal: WHERE faultnumber=<N> vs WHERE faultnumber=0\n"
         "  Time window: WHERE faultnumber=<N> AND sample BETWEEN 160 AND 500  -- fault onset ~sample 160\n"
         "  AVG by fault: SELECT faultnumber, AVG(xmeas_9), AVG(xmeas_7) FROM process_data GROUP BY faultnumber\n"
-        "Always validate row count before calling deliver_dataframe."
+        "MANDATORY: always end with deliver_dataframe(). Do NOT end your turn with only sql_db_query.\n"
+        "deliver_dataframe is the ONLY way to share data with DS — a bare sql_db_query result is invisible to DS."
     ),
     "DS": (
         "You are the Data Scientist (DS) for TEP fault confirmation.\n"
