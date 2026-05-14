@@ -20,6 +20,9 @@ Read this after `AGENTS.md` and `WORKSPACE_INDEX.md` when starting a new session
   - subgraph invocation now builds `ContextPack`-style contract/evidence/history-tail inputs with runtime limits
   - handoff validation is explicit for `ME -> DE`, `DE -> DS`, and `DS -> Supervisor`
   - `deliver_dataframe` now returns `artifact_id` and `columns` so DS-ready dataset gating is schema-backed
+- Local diagnosis test automation landed on 2026-05-14:
+  - `scripts/run_diagnose_checks.py` can run inline/window API smoke checks without manually starting uvicorn
+  - the script also exposes pytest slices for diagnosis API coverage
 
 ## Verification
 
@@ -32,6 +35,10 @@ Read this after `AGENTS.md` and `WORKSPACE_INDEX.md` when starting a new session
   - `python -m py_compile subagent_contracts.py context_assembler.py delegate_tools.py router.py common.py de_tools.py`
   - `pytest tests/test_subagent_contracts.py tests/test_context_assembler.py tests/test_workflow_hardening.py -q --basetemp .\_pytest_tmp_contracts`
   - `pytest tests/test_bb_me_injection.py tests/test_blackboard_unified.py -q --basetemp .\_pytest_tmp_contracts2`
+- Local test script verification passed on 2026-05-14:
+  - `python .\scripts\run_diagnose_checks.py --mode window-mock`
+  - `python .\scripts\run_diagnose_checks.py --mode pytest-api`
+  - `python -m py_compile .\scripts\run_diagnose_checks.py`
 - Broad regression run on 2026-05-14:
   - `pytest tests/ -q --basetemp .\_pytest_tmp_all`: 149 passed, 1 failed.
   - Failure reproduced alone: `tests/test_hardening.py::test_rate_limit_blocks_after_threshold` expected 429 on the 4th `/diagnose` request but got 200.
