@@ -57,7 +57,7 @@ def _has_min_evidence(state: dict) -> bool:
     if bb.get("facts") or bb.get("datasets"):
         return True
     try:
-        snap = get_bb_snapshot()
+        snap = get_bb_snapshot(state.get("run_id"))
         if snap.get("facts") or snap.get("datasets"):
             return True
     except Exception:

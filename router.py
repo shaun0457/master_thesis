@@ -87,7 +87,7 @@ def now_ms() -> int:
 
 def _root() -> str:
     # 可用環境變數覆寫；預設 /mnt/data/runs
-    root = os.environ.get("RUNS_DIR", "/mnt/data/runs")
+    root = os.environ.get("RUNS_DIR") or os.path.join(os.getcwd(), "runs")
     os.makedirs(root, exist_ok=True)
     return root
 

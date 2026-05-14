@@ -61,11 +61,14 @@ def _extract_and_write_me_fault_facts(out_state: dict) -> None:
 # Plan B: DE reads ME fault facts for context injection
 # ---------------------------------------------------------------------------
 
-def _read_me_fault_facts() -> str:
+def _read_me_fault_facts(state: Optional[Dict[str, Any]] = None) -> str:
     """Read ME-written kg_query_fault facts from BB. Returns formatted string or ''."""
     run_id = os.environ.get("RUN_ID")
     if not run_id:
         return ""
+    phase = (state or {}).get("phase", "")
+    topic_mode = ((state or {}).get("topic_ctx") or {}).get("mode", "")
+    diagnosis_mode = phase == "diagnose" or topic_mode == "diagnose"
     try:
         reg = bb_tools._load(run_id)
         me_facts = [
@@ -81,9 +84,13 @@ def _read_me_fault_facts() -> str:
             sensors = [s["column"] for s in f.get("diagnostic_sensors", []) if isinstance(s, dict)]
             lines.append(f"- IDV_{f['fault_id']}: {f.get('description', '')}")
             if sensors:
-                lines.append(f"  → query these sensors: {', '.join(sensors)}"
-                             f" with faultnumber={f['fault_id']}")
-                lines.append("  → use deliver_dataframe (NOT just COUNT)")
+                if diagnosis_mode:
+                    lines.append(f"  → candidate diagnostic sensors: {', '.join(sensors)}")
+                    lines.append("  → use these names only to select or align the already-registered datasets on the blackboard")
+                else:
+                    lines.append(f"  → query these sensors: {', '.join(sensors)}"
+                                 f" with faultnumber={f['fault_id']}")
+                    lines.append("  → use deliver_dataframe (NOT just COUNT)")
         return "\n".join(lines)
     except Exception:
         return ""
@@ -412,7 +419,7 @@ def attach_delegate_requests(result: Dict[str, Any], p2p_box: List[Dict[str, Any
 #     # ✅ 只回傳 read / write；不再回傳 request_delegate
 #     return [read_blackboard, write_to_blackboard], []
 
-def make_blackboard_tools(state: Dict[str, Any], agent_name: str) -> Tuple[List, List]:
+def _legacy_make_blackboard_tools(state: Dict[str, Any], agent_name: str) -> Tuple[List, List]:
     """
     建立黑板工具 + P2P 委派工具（request_delegate）。
     回傳：(tools_list, p2p_req_box)
@@ -1664,7 +1671,7 @@ def delegate_to_de(task: str, state: Dict[str, Any],
     intro = "You are the Data Engineer. Use your SQL and blackboard tools to fulfill the data request."
     p2p_tools, p2p_box = make_blackboard_tools(state, agent_name="DE")
     with _TopicCtx(state, topic_id, owner):
-        me_facts = _read_me_fault_facts()  # Plan B: inject ME fault context
+        me_facts = _read_me_fault_facts(state)  # Plan B: inject ME fault context
         if me_facts:
             task = f"[Context from ME]\n{me_facts}\n\n{task}"
         out_state = _run_subgraph("DE", state, task, intro,

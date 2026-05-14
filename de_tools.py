@@ -306,7 +306,7 @@ def pandas_transform(df_json: str, operations: Optional[List[str]] = None) -> st
     except Exception as e:
         return json.dumps({"status": "error", "error": str(e)})
 
-def _auto_publish_dataset(df, state: Dict[str, Any], *, agent: str = "DE", name_prefix: str = "de_autosample") -> Dict[str, Any]:
+def _legacy_auto_publish_dataset(df, state: Dict[str, Any], *, agent: str = "DE", name_prefix: str = "de_autosample") -> Dict[str, Any]:
     """把 df 落成 parquet + 註冊到黑板 + 發一則黑板訊息；失敗就靜默略過（不影響原有邏輯）"""
     try:
         run_id = state.get("run_id") or os.getenv("RUN_ID") or time.strftime("%Y%m%d_%H%M%S")
@@ -462,4 +462,3 @@ def get_de_tools(mode: str):
     ])
     tool_map = {t.name: t for t in tools}
     return tools, tool_map
-

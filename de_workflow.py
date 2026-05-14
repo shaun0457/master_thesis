@@ -196,6 +196,24 @@ def tool_node(state: AgentState, tool_map: Dict[str, Any]):
 # -----------------------------
 _MAX_TURNS = 8  # 迭代保險絲，避免無限迴圈
 
+def _has_successful_delivery(state: AgentState) -> bool:
+    metrics = state.get("metrics", {}) or {}
+    if metrics.get("deliver_via"):
+        return True
+
+    for msg in reversed(state.get("messages", [])):
+        if not isinstance(msg, ToolMessage):
+            continue
+        if (getattr(msg, "name", "") or "") != "deliver_dataframe":
+            continue
+        try:
+            payload = json.loads(msg.content)
+        except Exception:
+            payload = {}
+        if isinstance(payload, dict) and payload.get("status") == "ok":
+            return True
+    return False
+
 def router_after_de(state: AgentState):
     """DE 輸出後：若有 tool_calls → 去執行工具；否則直接進 DS（失敗/成功由 DS 定義）"""
     m = state.setdefault("metrics", {})
@@ -206,8 +224,10 @@ def router_after_de(state: AgentState):
     last = state["messages"][-1]
     if isinstance(last, AIMessage) and last.tool_calls:
         return "ToolExecutor"
+    if _has_successful_delivery(state):
+        return "DataScientistValidator"
     # 沒有工具呼叫 → 讓 DS 判定（通常視為 no_result_found）
-    return "DataScientistValidator"
+    return "DataEngineer"
 
 def router_after_tool(state: AgentState):
     """
