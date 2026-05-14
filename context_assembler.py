@@ -73,6 +73,27 @@ PHASE_SNIPPETS: Dict[str, str] = {
         "Last action failed. Read the error carefully. Try a different SQL/code approach. "
         "Do not repeat the identical failing call."
     ),
+    "Supervisor:diagnose": (
+        "DIAGNOSIS MODE — an unlabeled sensor observation has been pre-registered on the "
+        "blackboard as dataset `obs_<run_id>` together with `baseline_stats` (per-sensor "
+        "mean/std over faultnumber=0). The faultnumber column is HIDDEN from the observation.\n"
+        "Hard rules (must follow):\n"
+        "  - DO NOT instruct DE to filter by faultnumber — that would be cheating (the label "
+        "    is exactly what you must infer).\n"
+        "  - The observation parquet is already on the blackboard. DE should LOAD it via "
+        "    ds_pick_dataset_path / bb_get_latest_dataset, not re-query SQL.\n"
+        "  - ME MUST call kg_match_fault_by_sensors before final_answer so candidate scores "
+        "    are logged (used for accuracy and confidence).\n"
+        "Recommended chain:\n"
+        "  1) delegate_to_de — load `obs_<run_id>` and `baseline_stats` and deliver a merged frame.\n"
+        "  2) delegate_to_ds — compute per-sensor z = (obs.mean - baseline.mean) / baseline.std; "
+        "     report top-5 sensors by |z|.\n"
+        "  3) delegate_to_me — call kg_match_fault_by_sensors with those sensors, then "
+        "     kg_query_fault on the top candidate for context.\n"
+        "  4) final_answer — state predicted fault as 'IDV_N', list evidence sensors, "
+        "     one-paragraph rationale. If ambiguous between sensor-family siblings (e.g. "
+        "     {4,11,14}), report the family and the most likely member."
+    ),
 }
 
 # Protocol snippets: injected based on experimental condition (~20-30 tokens)

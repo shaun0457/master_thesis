@@ -215,6 +215,7 @@ def diagnose(
         "seed": 42,
         "task_id": run_id,
         "prompt_condition": "diagnose",
+        "phase": "diagnose",  # triggers Supervisor:diagnose PHASE_SNIPPET
         "topic_ctx": {
             "mode": "diagnose",
             "obs_dataset": obs_dataset_name,

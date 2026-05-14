@@ -24,6 +24,7 @@ from typing import Any, Optional
 
 import pandas as pd
 from fastapi import BackgroundTasks, FastAPI, HTTPException
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 
 BASE = os.path.dirname(os.path.abspath(__file__))
@@ -163,7 +164,8 @@ def index() -> dict[str, Any]:
         "endpoints": [
             "POST /diagnose", "POST /diagnose/window",
             "POST /observations", "GET /observations",
-            "GET /diagnoses", "POST /admin/baseline", "GET /health",
+            "GET /diagnoses", "POST /admin/baseline",
+            "GET /health", "GET /dashboard",
         ],
     }
 
@@ -331,3 +333,9 @@ def recompute_baseline(bg: BackgroundTasks) -> dict[str, str]:
         build()
     bg.add_task(_run)
     return {"status": "scheduled", "output": BASELINE_PARQUET}
+
+
+@app.get("/dashboard", response_class=HTMLResponse)
+def dashboard(limit: int = 50) -> HTMLResponse:
+    from monitoring.dashboard import render_dashboard
+    return HTMLResponse(render_dashboard(BUFFER_DB, limit=limit))
