@@ -63,11 +63,12 @@ def _extract_and_write_me_fault_facts(out_state: dict) -> None:
 
 def _read_me_fault_facts(state: Optional[Dict[str, Any]] = None) -> str:
     """Read ME-written kg_query_fault facts from BB. Returns formatted string or ''."""
-    run_id = os.environ.get("RUN_ID")
+    state = state or {}
+    run_id = state.get("run_id") or state.get("RUN_ID") or os.environ.get("RUN_ID")
     if not run_id:
         return ""
-    phase = (state or {}).get("phase", "")
-    topic_mode = ((state or {}).get("topic_ctx") or {}).get("mode", "")
+    phase = state.get("phase", "")
+    topic_mode = (state.get("topic_ctx") or {}).get("mode", "")
     diagnosis_mode = phase == "diagnose" or topic_mode == "diagnose"
     try:
         reg = bb_tools._load(run_id)
@@ -902,11 +903,12 @@ def _invoke_stage1(agent: str, intro_msgs: List[HumanMessage], extra_tools: List
     # 固定 policy 與取得角色卡
     policy = POLICY
     role_card_prompt = get_system_prompt(agent, policy)
-    prompt_hash = abs(hash(role_card_prompt)) & 0xFFFF
-    cache_key = f"{agent}_augmented_{policy}_{prompt_hash}"
+    # Stage-1 graphs close over injected blackboard/P2P tools, which are bound to
+    # the current run state. Build a fresh graph for each delegate call.
+    cache_key = None
 
     # 建/取子圖執行器
-    if cache_key in _GRAPH_CACHE:
+    if cache_key is not None and cache_key in _GRAPH_CACHE:
         graph = _GRAPH_CACHE[cache_key]
     else:
         try:
@@ -980,7 +982,8 @@ def _invoke_stage1(agent: str, intro_msgs: List[HumanMessage], extra_tools: List
             build_args["entry_point"] = "DataScientist"
         final_args = {p: build_args[p] for p in params if p in build_args}
         graph = build_graph_func(**final_args)
-        _GRAPH_CACHE[cache_key] = graph
+        if cache_key is not None:
+            _GRAPH_CACHE[cache_key] = graph
 
     # ---- 單一來源：在 state 決定 RUN_ID，並同步到環境變數 ----
     rid = state.get("run_id") or os.getenv("RUN_ID") or f"run_{uuid.uuid4().hex[:8]}"

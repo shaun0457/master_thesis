@@ -12,7 +12,7 @@ import os
 from common import llm, AgentState, dbg, dbg_json
 # 視你的工具集而定；若沒有 deliver_dataframe / semantic_select 也沒關係
 # DATASET_TOOLS = {"sql_db_query", "deliver_dataframe", "sql_db_semantic_select"}
-DATASET_TOOLS = {"sql_db_query", "deliver_dataframe", "sql_db_semantic_select", "sql_db_list_tables", "sql_db_schema", "pandas_transform"}
+DATASET_DELIVERY_TOOLS = {"deliver_dataframe"}
 
 def _extract_text_content(msg: AIMessage) -> str:
     """把 AIMessage.content 轉成可讀字串：支援 str / list[dict] 兩種格式。"""
@@ -198,7 +198,7 @@ _MAX_TURNS = 8  # 迭代保險絲，避免無限迴圈
 
 def _has_successful_delivery(state: AgentState) -> bool:
     metrics = state.get("metrics", {}) or {}
-    if metrics.get("deliver_via"):
+    if metrics.get("deliver_via") in {"deliver_dataframe", "parquet"}:
         return True
 
     for msg in reversed(state.get("messages", [])):
@@ -210,7 +210,14 @@ def _has_successful_delivery(state: AgentState) -> bool:
             payload = json.loads(msg.content)
         except Exception:
             payload = {}
-        if isinstance(payload, dict) and payload.get("status") == "ok":
+        df_payload = payload.get("df_payload") if isinstance(payload, dict) else {}
+        if (
+            isinstance(payload, dict)
+            and payload.get("status") == "ok"
+            and isinstance(df_payload, dict)
+            and df_payload.get("path")
+            and int(payload.get("rowcount", 0)) >= 1
+        ):
             return True
     return False
 
@@ -241,24 +248,27 @@ def router_after_tool(state: AgentState):
 
     name = getattr(last, "name", "") or ""
     # 非資料工具：例如列表/查 schema，回 DE 繼續思考
-    if name not in DATASET_TOOLS:
-        return "DataEngineer"
-
     # 嘗試解析工具輸出
     try:
         # 如果是交付檔案（parquet 路徑），直接交給 DS
         if isinstance(last.content, str) and last.content.endswith(".parquet"):
-            state.setdefault("metrics", {})["deliver_via"] = "pandas"
+            state.setdefault("metrics", {})["deliver_via"] = "parquet"
             return "DataScientistValidator"
+
+        if name not in DATASET_DELIVERY_TOOLS:
+            return "DataEngineer"
 
         payload = json.loads(last.content)
         if payload.get("status") != "ok":
+            return "DataEngineer"
+        df_payload = payload.get("df_payload") or {}
+        if not isinstance(df_payload, dict) or not df_payload.get("path"):
             return "DataEngineer"
 
         contract = state.get("task_contract") or {}
         min_rows = int(contract.get("min_rows", 1))
         if int(payload.get("rowcount", 0)) >= min_rows:
-            state.setdefault("metrics", {})["deliver_via"] = "sql"
+            state.setdefault("metrics", {})["deliver_via"] = "deliver_dataframe"
             return "DataScientistValidator"
         return "DataEngineer"
     except Exception:

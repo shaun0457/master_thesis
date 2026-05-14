@@ -892,7 +892,6 @@ def route_and_execute(state: Dict[str, Any]) -> Dict[str, Any]:
                 pending = list((cont or {}).get("delegate_requests", [])) + next_round
                 total_p2p_hops += 1
 
-    state["messages"].extend(outputs)
     state.setdefault("metrics", {}).setdefault("p2p_hops", 0)
     state["metrics"]["p2p_hops"] += total_p2p_hops
     return {"messages": outputs, "metrics": state["metrics"], "violations": state.get("violations", [])}
