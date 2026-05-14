@@ -10,7 +10,8 @@
 
 # Large data directories
 TEP_data/
-datasets/
+datasets/*
+!datasets/baseline_stats.parquet
 
 # RAG index cache
 .rag_index/
