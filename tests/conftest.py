@@ -6,6 +6,10 @@ import os
 # Must be set before torch/transformers loads to avoid Windows OMP crash
 os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
 
+import shutil
+import uuid
+from pathlib import Path
+
 import pytest
 from unittest.mock import MagicMock
 from langchain_core.messages import AIMessage
@@ -78,3 +82,16 @@ def mock_state():
         "metrics": {},
         "tool_events": [],
     }
+
+
+@pytest.fixture
+def tmp_path():
+    """Workspace-safe tmp_path override for Windows environments with locked pytest temp roots."""
+    base = Path(r"C:\Users\chengting\AppData\Local\Temp\codex-pytest")
+    base.mkdir(parents=True, exist_ok=True)
+    path = base / uuid.uuid4().hex[:8]
+    path.mkdir()
+    try:
+        yield path
+    finally:
+        shutil.rmtree(path, ignore_errors=True)

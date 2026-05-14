@@ -110,6 +110,14 @@ gq09: PASS (hit=0.60) ← KG 新題（IDV 11 reactor cooling）
 ---
 
 ## Test Status
+Latest runtime regression pass: `pytest tests/ -q` -> `85 passed` on 2026-05-13.
+Resolved items:
+- [x] `de_tools.py` read-only `SELECT` enforcement with leading comment stripping
+- [x] `de_tools.py` single execution + preserved `df_payload`
+- [x] `ds_tools.py` minimal subprocess environment with secret scrubbing
+- [x] `router.py` parallel ME/DE delegation disabled until shared state is safe
+- [x] `bb_tools.py` blackboard write lock added
+
 ```
 pytest tests/ → 72 passed (2026-05-13)
   test_structured_outputs.py  14/14

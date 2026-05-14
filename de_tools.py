@@ -18,6 +18,7 @@ from bb_tools import bb_register_dataset_path
 DB_URL = os.environ.get("DATABASE_URL", "sqlite:///tep_combined.db")
 ENGINE = create_engine(DB_URL, pool_pre_ping=True)
 FORBIDDEN = re.compile(r"\b(INSERT|UPDATE|DELETE|DROP|ALTER|TRUNCATE|CREATE)\b", re.I)
+_LEADING_SQL_COMMENTS = re.compile(r"^(?:\s+|--[^\n]*(?:\n|$)|/\*.*?\*/)+", re.DOTALL)
 
 def _get_db_engine():
     db_url = os.getenv("DATABASE_URL") or "sqlite:///tep_combined.db"
@@ -51,6 +52,22 @@ def _norm_arg_str(x: Any, key: Optional[str] = None) -> str:   # ✅ 不用 str 
         return ""
     return str(x)
 
+
+def _strip_leading_sql_comments(query: str) -> str:
+    stripped = query or ""
+    while True:
+        updated = _LEADING_SQL_COMMENTS.sub("", stripped, count=1)
+        if updated == stripped:
+            return stripped.lstrip()
+        stripped = updated
+
+
+def _validate_read_only_select(query: str) -> str:
+    normalized = _strip_leading_sql_comments(str(query or ""))
+    if not normalized or not normalized.lower().startswith("select") or FORBIDDEN.search(normalized):
+        raise ValueError("Only read-only SELECT queries are allowed.")
+    return normalized
+
 @tool
 def sql_db_query(query: str) -> str:
     """
@@ -61,90 +78,57 @@ def sql_db_query(query: str) -> str:
 
     關閉自動註冊：將環境變數 DE_AUTOREGISTER 設為 "0"。
     """
-    # 你的專案內部的 DB engine 取得器；保持與原檔一致
     rl = get_run_logger()
     with rl.tool_exec(agent="DE", tool="sql_db_query", task_id=os.getenv("TASK_ID"), args={"query": query}) as t:
-        eng = _get_db_engine()
+        try:
+            query_str = _validate_read_only_select(query)
 
-        # --- 執行查詢 ---
-        with eng.connect() as conn:
-            rows = conn.execute(text(query)).mappings().all()
-        cols = list(rows[0].keys()) if rows else []
-        out: Dict[str, Any] = {
-            "status": "ok",
-            "columns": cols,
-            "rowcount": len(rows),
-            "rows": rows[:1000],   # 回傳最多 1000 筆，避免輸出過大
-        }
+            eng = _get_db_engine()
+            with eng.connect().execution_options(no_cache_on_overflow=True) as conn:
+                if eng.dialect.name == "sqlite":
+                    conn.exec_driver_sql("PRAGMA query_only = ON")
+                rows_raw = conn.execute(text(query_str)).mappings().all()
 
-        # --- 自動註冊樣本：可由環境變數關閉 ---
-        if os.getenv("DE_AUTOREGISTER", "1") == "1":
-            try:
-                run_id = os.getenv("RUN_ID") or f"run_{uuid.uuid4().hex[:8]}"
-                df = pd.DataFrame(rows) if rows else pd.DataFrame(columns=cols)
+            rows = [dict(r) for r in rows_raw]
+            cols = list(rows[0].keys()) if rows else []
+            out: Dict[str, Any] = {
+                "status": "ok",
+                "columns": cols,
+                "rowcount": len(rows),
+                "rows": rows[:1000],
+            }
 
-                # 只保存輕量樣本；全量交付仍由 DE 額外呼叫 deliver_dataframe
-                dataset_name = f"de_autosample_{abs(hash(query)) & 0xFFFF}"
-                out_dir = os.path.join("datasets", run_id)
-                os.makedirs(out_dir, exist_ok=True)
-                parquet_path = os.path.join(out_dir, f"{dataset_name}.parquet")
-                df.to_parquet(parquet_path, index=False)
+            if os.getenv("DE_AUTOREGISTER", "1") == "1":
+                try:
+                    run_id = os.getenv("RUN_ID") or f"run_{uuid.uuid4().hex[:8]}"
+                    topic_id = os.getenv("TOPIC_ID", "")
+                    df = pd.DataFrame(rows) if rows else pd.DataFrame(columns=cols)
+                    dataset_name = f"de_autosample_{abs(hash(query_str)) & 0xFFFF}"
+                    out_dir = os.path.join("datasets", run_id)
+                    os.makedirs(out_dir, exist_ok=True)
+                    parquet_path = os.path.join(out_dir, f"{dataset_name}.parquet")
+                    df.to_parquet(parquet_path, index=False)
 
-                # --- 寫出輕量樣本（維持你原本的策略）---
-                run_id = os.getenv("RUN_ID") or f"run_{uuid.uuid4().hex[:8]}"
-                topic_id = os.getenv("TOPIC_ID", "")  # ← 沒有 state 也 OK，用環境變數
-                df = pd.DataFrame(rows) if rows else pd.DataFrame(columns=cols)
+                    _ = bb_register_dataset_path(
+                        run_id=run_id,
+                        name=dataset_name,
+                        path=parquet_path,
+                        fmt="parquet",
+                        rows=len(df),
+                        columns=list(df.columns),
+                        meta={"source": "sql_db_query", "sampled": True, "intended_owner": "DS"},
+                        topic_id=topic_id,
+                        created_by="DE"
+                    )
+                    out["df_payload"] = {"name": dataset_name, "path": parquet_path, "run_id": run_id}
+                except Exception as _e:
+                    out["df_register_error"] = str(_e)
 
-                dataset_name = f"de_autosample_{abs(hash(query)) & 0xFFFF}"
-                out_dir = os.path.join("datasets", run_id)
-                os.makedirs(out_dir, exist_ok=True)
-                parquet_path = os.path.join(out_dir, f"{dataset_name}.parquet")
-                df.to_parquet(parquet_path, index=False)
-
-                # --- 註冊到黑板（datasets 與 artifacts 各寫一筆；保證 topic_id 帶上）---
-
-                _ = bb_register_dataset_path(
-                    run_id=run_id,
-                    name=dataset_name,
-                    path=parquet_path,
-                    fmt="parquet",
-                    rows=len(df),
-                    columns=list(df.columns),
-                    meta={"source": "sql_db_query", "sampled": True, "intended_owner": "DS"},
-                    topic_id=topic_id,
-                    created_by="DE"
-                )
-
-                # # 優先使用黑板 helper（若存在）
-                # try:
-                #     bb_register_dataset_path(
-                #         run_id, dataset_name, parquet_path,
-                #         meta={"source": "sql_db_query", "sampled": True}
-                #     )
-                # except Exception:
-                #     # 若沒有 helper，也嘗試用 deliver_dataframe（若你有將其公開為 LangChain Tool）
-                #     try:
-                #         _ = deliver_dataframe.invoke({
-                #             "name": dataset_name,
-                #             "path": parquet_path,
-                #             "meta": {"source": "sql_db_query", "sampled": True}
-                #         })
-                #     except Exception:
-                #         pass
-
-                # 讓上層即使不讀黑板，也能直接拿到位置（沿用你原本 out 資訊）
-                out["df_payload"] = {"name": dataset_name, "path": parquet_path, "run_id": run_id}
-            except Exception as _e:
-                # 註冊失敗不影響主流程
-                out["df_register_error"] = str(_e)
-
-        with eng.connect() as conn:
-            rows = conn.execute(text(query)).mappings().all()
-        rows = [dict(r) for r in rows]  # ← 必加
-        out = {"status": "ok", "columns": list(rows[0].keys()) if rows else [], "rowcount": len(rows), "rows": rows[:1000]}
-
-        t.ok(True)
-    return json.dumps(out, ensure_ascii=False)
+            t.ok(True)
+            return json.dumps(out, ensure_ascii=False)
+        except Exception as e:
+            t.ok(False)
+            return json.dumps({"status": "error", "error": str(e)}, ensure_ascii=False)
 
 # @tool
 # def sql_db_query(query: str) -> str:

@@ -53,6 +53,16 @@ def _execute_python_subprocess(code: str, timeout: int = 30) -> dict:
     import subprocess
     import tempfile
     import sys as _sys
+    def _looks_secret(key: str) -> bool:
+        upper_key = str(key or "").upper()
+        return any(token in upper_key for token in ("TOKEN", "KEY", "SECRET", "PASSWORD", "CREDENTIAL"))
+    clean_env = {}
+    for key in ("PATH", "PYTHONPATH", "TMPDIR"):
+        value = os.environ.get(key)
+        if value and not _looks_secret(key):
+            clean_env[key] = value
+    clean_env["PATH"] = os.environ.get("PATH") or os.environ.get("Path", "")
+    clean_env["PYTHONPATH"] = os.getcwd()
     with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False, encoding="utf-8") as f:
         f.write(code)
         tmp_path = f.name
@@ -62,7 +72,7 @@ def _execute_python_subprocess(code: str, timeout: int = 30) -> dict:
             capture_output=True,
             text=True,
             timeout=timeout,
-            env={**os.environ, "PYTHONPATH": os.getcwd()},
+            env=clean_env,
         )
         return {"stdout": result.stdout, "stderr": result.stderr, "returncode": result.returncode}
     except subprocess.TimeoutExpired:

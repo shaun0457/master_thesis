@@ -1,11 +1,13 @@
 # bb_tools.py — File-backed blackboard (single source of truth) with stable artifact_id
 # 安全覆蓋舊版使用；不依賴 common.ensure_run_id
 
-import os, json, time, uuid, hashlib
+import os, json, time, uuid, hashlib, threading
 from typing import Any, Dict, List, Optional
 import pandas as pd
 from langchain.tools import tool
 from run_logger import emit_bb_write, emit_bb_read, note_tool_call
+
+BLACKBOARD_LOCK = threading.RLock()
 
 # ========= basic helpers =========
 
@@ -125,26 +127,27 @@ def bb_write(*, run_id: Optional[str],
     """
     t0 = now_ms()
     rid = _resolve_run_id(run_id)
-    reg = _load(rid)
+    with BLACKBOARD_LOCK:
+        reg = _load(rid)
 
-    seed = f"{rid}|{topic_id}|{section}|{(content_preview or '')[:64]}|{time.time()}"
-    artifact_id = _mk_artifact_id(seed, prefix="fx")
+        seed = f"{rid}|{topic_id}|{section}|{(content_preview or '')[:64]}|{time.time()}"
+        artifact_id = _mk_artifact_id(seed, prefix="fx")
 
-    rec = {
-        "artifact_id": artifact_id,
-        "topic_id": topic_id,
-        "section": section,
-        "created_by": created_by or os.environ.get("AGENT","SYS"),
-        "created_at_ms": now_ms(),
-        "uri": uri or "",
-        "preview": (content_preview or "")[:400],
-        "intended_owner": intended_owner or "",
-        "task_id": os.getenv("TASK_ID",""),
-        "seed": int(os.getenv("SEED","11")),
-    }
-    reg.setdefault(section, []).append(rec)
-    reg.setdefault("artifacts", []).append(rec)
-    _save(rid, reg)
+        rec = {
+            "artifact_id": artifact_id,
+            "topic_id": topic_id,
+            "section": section,
+            "created_by": created_by or os.environ.get("AGENT","SYS"),
+            "created_at_ms": now_ms(),
+            "uri": uri or "",
+            "preview": (content_preview or "")[:400],
+            "intended_owner": intended_owner or "",
+            "task_id": os.getenv("TASK_ID",""),
+            "seed": int(os.getenv("SEED","11")),
+        }
+        reg.setdefault(section, []).append(rec)
+        reg.setdefault("artifacts", []).append(rec)
+        _save(rid, reg)
 
     # === 事件打點（ETL 會吃）===
     try:
@@ -329,8 +332,6 @@ def bb_register_dataset_path(
     直接將檔案（parquet/csv）註冊到 blackboard 的 datasets；同時建立 artifact 索引並 emit 事件。
     """
     rid = _resolve_run_id(run_id)
-    reg = _load(rid)
-
     ext = (os.path.splitext(path)[1] or "").lower()
     fmt_inferred = "parquet" if ext == ".parquet" else "csv" if ext == ".csv" else "unknown"
     fmt = fmt or fmt_inferred
@@ -353,19 +354,21 @@ def bb_register_dataset_path(
         "meta": meta or {},
         "topic_id": topic_id,
     }
-    reg.setdefault("datasets", []).append(item)
+    with BLACKBOARD_LOCK:
+        reg = _load(rid)
+        reg.setdefault("datasets", []).append(item)
 
-    reg.setdefault("artifacts", []).append({
-        "artifact_id": artifact_id,
-        "topic_id": topic_id,
-        "section": "datasets",
-        "created_by": created_by,
-        "created_at_ms": nowt,
-        "uri": path,
-        "preview": name or os.path.basename(path),
-        "intended_owner": (meta or {}).get("intended_owner", "")
-    })
-    _save(rid, reg)
+        reg.setdefault("artifacts", []).append({
+            "artifact_id": artifact_id,
+            "topic_id": topic_id,
+            "section": "datasets",
+            "created_by": created_by,
+            "created_at_ms": nowt,
+            "uri": path,
+            "preview": name or os.path.basename(path),
+            "intended_owner": (meta or {}).get("intended_owner", "")
+        })
+        _save(rid, reg)
 
     # === 事件打點（資料集寫入）===
     try:
@@ -423,7 +426,6 @@ def bb_register_dataset(
     回傳: {"status":"ok","dataset":{...}}
     """
     rid = _resolve_run_id(None)
-    reg = _load(rid)
     nowt = now_ms()
     dataset_id = f"ds_{uuid.uuid4().hex[:8]}"
     artifact_id = _mk_artifact_id(f"{rid}|datasets|{ref}|{time.time()}", prefix="fx")
@@ -442,18 +444,20 @@ def bb_register_dataset(
         "meta": {},
         "topic_id": "",
     }
-    reg["datasets"].append(item)
-    reg["artifacts"].append({
-        "artifact_id": artifact_id,
-        "topic_id": "",
-        "section": "datasets",
-        "created_by": "DE",
-        "created_at_ms": nowt,
-        "uri": ref,
-        "preview": item["name"],
-        "intended_owner": ""
-    })
-    _save(rid, reg)
+    with BLACKBOARD_LOCK:
+        reg = _load(rid)
+        reg["datasets"].append(item)
+        reg["artifacts"].append({
+            "artifact_id": artifact_id,
+            "topic_id": "",
+            "section": "datasets",
+            "created_by": "DE",
+            "created_at_ms": nowt,
+            "uri": ref,
+            "preview": item["name"],
+            "intended_owner": ""
+        })
+        _save(rid, reg)
     return json.dumps({"status": "ok", "dataset": item}, ensure_ascii=False)
 
 @tool
@@ -640,20 +644,21 @@ def write_to_blackboard(
     uri_path = _dump_content_blob(rid, fxid, content)
 
     # 覆寫該 artifact 的 uri / preview
-    reg = _load(rid)
-    for it in reg.get(section, []):
-        if it.get("artifact_id") == fxid:
-            it["uri"] = uri_path
-            if summary:
-                it["preview"] = summary[:400]
-            break
-    for it in reg.get("artifacts", []):
-        if it.get("artifact_id") == fxid:
-            it["uri"] = uri_path
-            if summary:
-                it["preview"] = summary[:400]
-            break
-    _save(rid, reg)
+    with BLACKBOARD_LOCK:
+        reg = _load(rid)
+        for it in reg.get(section, []):
+            if it.get("artifact_id") == fxid:
+                it["uri"] = uri_path
+                if summary:
+                    it["preview"] = summary[:400]
+                break
+        for it in reg.get("artifacts", []):
+            if it.get("artifact_id") == fxid:
+                it["uri"] = uri_path
+                if summary:
+                    it["preview"] = summary[:400]
+                break
+        _save(rid, reg)
 
     # 鏡射到 state（讓同回合可見）
     if isinstance(state, dict):
@@ -693,15 +698,16 @@ def write_to_blackboard(section: str, summary: str = "", content: Any = None) ->
 def bb_add_citations(run_id: Optional[str], citations: List[Dict[str, Any]]) -> None:
     """批次加入 citations（含去重），常用於程式內部。"""
     rid = _resolve_run_id(run_id)
-    reg = _load(rid)
-    reg.setdefault("citations", [])
-    seen = {(c.get("doc_id"), int(c.get("page", 0)), (c.get("quote") or "")) for c in reg["citations"]}
-    for c in (citations or []):
-        key = (c.get("doc_id"), int(c.get("page", 0)), (c.get("quote") or ""))
-        if key not in seen:
-            reg["citations"].append(c)
-            seen.add(key)
-    _save(rid, reg)
+    with BLACKBOARD_LOCK:
+        reg = _load(rid)
+        reg.setdefault("citations", [])
+        seen = {(c.get("doc_id"), int(c.get("page", 0)), (c.get("quote") or "")) for c in reg["citations"]}
+        for c in (citations or []):
+            key = (c.get("doc_id"), int(c.get("page", 0)), (c.get("quote") or ""))
+            if key not in seen:
+                reg["citations"].append(c)
+                seen.add(key)
+        _save(rid, reg)
 
 def bb_add_facts(
     run_id: Optional[str],
@@ -711,17 +717,18 @@ def bb_add_facts(
 ) -> None:
     """批次加入 facts，自動正規化為 provenance dict 格式。"""
     rid = _resolve_run_id(run_id)
-    reg = _load(rid)
-    reg.setdefault("facts", [])
-    for f in (facts or []):
-        if isinstance(f, str):
-            entry = _fact_entry(claim=f, agent=agent, source_tool=source_tool)
-        elif isinstance(f, dict) and "claim" in f:
-            entry = f  # already provenance format
-        elif isinstance(f, dict):
-            claim = str(f.get("text") or f.get("content") or f)
-            entry = _fact_entry(claim=claim, agent=agent, source_tool=source_tool)
-        else:
-            entry = _fact_entry(claim=str(f), agent=agent, source_tool=source_tool)
-        reg["facts"].append(entry)
-    _save(rid, reg)
+    with BLACKBOARD_LOCK:
+        reg = _load(rid)
+        reg.setdefault("facts", [])
+        for f in (facts or []):
+            if isinstance(f, str):
+                entry = _fact_entry(claim=f, agent=agent, source_tool=source_tool)
+            elif isinstance(f, dict) and "claim" in f:
+                entry = f
+            elif isinstance(f, dict):
+                claim = str(f.get("text") or f.get("content") or f)
+                entry = _fact_entry(claim=claim, agent=agent, source_tool=source_tool)
+            else:
+                entry = _fact_entry(claim=str(f), agent=agent, source_tool=source_tool)
+            reg["facts"].append(entry)
+        _save(rid, reg)

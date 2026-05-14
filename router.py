@@ -29,8 +29,8 @@ MAX_GLOBAL_TOOL_CALLS = int(os.getenv("MAX_GLOBAL_TOOL_CALLS", "25"))
 # Plan A: lock guards global_tool_calls counter against parallel increment race
 _metrics_lock = threading.Lock()
 
-# Tool names that may run in parallel when called in the same Supervisor turn
-_PARALLEL_CAPABLE = {"delegate_to_me", "delegate_to_de"}
+# Parallel delegation is disabled until blackboard/state mutations are fully thread-safe.
+_PARALLEL_CAPABLE = set()
 
 def _norm_agent_name(s: str) -> str:
     return (s or "").strip().upper()
@@ -601,6 +601,7 @@ def route_and_execute(state: Dict[str, Any]) -> Dict[str, Any]:
         return {}
 
     state.setdefault("metrics", {}).setdefault("global_tool_calls", 0)
+    bb_lock = threading.Lock()
 
     outputs: List[ToolMessage] = []
     total_p2p_hops = 0
@@ -614,7 +615,8 @@ def route_and_execute(state: Dict[str, Any]) -> Dict[str, Any]:
         """Execute one tool call; return (call, res). Thread-safe for metrics counter."""
         name = call.get("name")
         args = call.get("args") or {}
-        res = _exec_one_tool(name, args, state)
+        with bb_lock:
+            res = _exec_one_tool(name, args, state)
         with _metrics_lock:
             state["metrics"]["global_tool_calls"] += 1
         _consume_p2p_requests(res, state)
@@ -889,5 +891,3 @@ def route_and_execute(state: Dict[str, Any]) -> Dict[str, Any]:
     state.setdefault("metrics", {}).setdefault("p2p_hops", 0)
     state["metrics"]["p2p_hops"] += total_p2p_hops
     return {"messages": outputs, "metrics": state["metrics"], "violations": state.get("violations", [])}
-
-
