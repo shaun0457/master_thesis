@@ -110,7 +110,9 @@ def test_diagnose_persists_to_buffer_and_parses_fault(tmp_path):
     assert result.error is None
     assert result.predicted_fault == 4
     assert result.fault_name == "IDV_4"
-    assert result.confidence == 1.0
+    # Two candidates tied at score=1.0 → weighted confidence = 1.0 * (0.5 + 0) = 0.5
+    # (ambiguity between fault family siblings is reflected in confidence)
+    assert result.confidence == 0.5
     assert "xmeas_9" in result.evidence_sensors
     assert len(result.top_candidates) == 2
     assert result.true_fault == 4
@@ -125,7 +127,7 @@ def test_diagnose_persists_to_buffer_and_parses_fault(tmp_path):
         ).fetchone()
     finally:
         conn.close()
-    assert row == (4, 4, 1.0)
+    assert row == (4, 4, 0.5)
 
 
 def test_diagnose_handles_graph_exception(tmp_path):

@@ -21,14 +21,14 @@ Do not use it for long-term architecture explanation. That belongs in:
 
 ## Current Status
 
-- Regression baseline: `pytest tests/ -q → 119 passed` (2026-05-14, after Phase TS)
-- Live evaluation baseline: `9/9 PASS` (2026-05-13)
-- 執行中工作軌：**Production-Ready Fault Diagnosis Pipeline**（Plan: `C:\Users\chengting\.claude\plans\jolly-plotting-spring.md`）
-- 已完成 Phase 1, 2, 3, 3.5, **TS**（共 7 個 phase）；準備進入 Phase 4
+- Regression baseline: `pytest tests/ -q → 136 passed` (2026-05-14, after Phase 6)
+- Live evaluation baseline: `9/9 PASS` (2026-05-13) — diagnosis items (gq10-12) not yet run live
+- 工作軌：**Production-Ready Fault Diagnosis Pipeline** — **全部 phase 完成** ✓
+  - Plan: `C:\Users\chengting\.claude\plans\jolly-plotting-spring.md`
 
 ## Current Phase
 
-Phase: production diagnosis pipeline — **Phase 4 待啟動** (Supervisor prompt + monitoring dashboard)
+Phase: **all diagnosis pipeline phases shipped** — ready for live demo / eval
 
 ## Completed Recently (2026-05-14)
 
@@ -61,6 +61,23 @@ Phase: production diagnosis pipeline — **Phase 4 待啟動** (Supervisor promp
 - `api_server.py`：新端點 `POST /diagnose/window`（取 buffer 最近 N 筆做診斷）；IngestRequest 接受新欄位；`_persist_observations` 寫入 sample axis
 - 14 個新/改寫測試：cursor 推進、run rollover、新 payload shape、window 端點 4 條路徑（empty/last_n/source filter/explicit truth）
 - 既存 buffer migration 已驗證（2 個 ALTER 成功，欄位齊全）
+
+### Diagnosis Pipeline — Phase 4（commit f08a513）
+- `context_assembler.py`：新 `PHASE_SNIPPETS["Supervisor:diagnose"]`，state["phase"]=="diagnose" 時注入；硬規則禁止 faultnumber 過濾，要求呼叫 kg_match_fault_by_sensors
+- `diagnose_flow.py`：state["phase"]="diagnose"
+- `monitoring/dashboard.py`：純 HTML 視圖，最近 50 筆診斷、accuracy badge、10 秒自動 refresh
+- `api_server.py`：GET /dashboard 端點
+- 5 個新測試
+
+### Diagnosis Pipeline — Phase 5（commit e8fa0cb）
+- `eval/golden_qa.json`：加 gq10/11/12（三個 sensor family 的反向查詢測試）
+- `tests/test_diagnose_e2e.py`：3 個 end-to-end 整合測試（simulator → /observations → window → /diagnoses → /dashboard 完整鏈）
+
+### Diagnosis Pipeline — Phase 6 (hardening)
+- `diagnose_flow._weighted_confidence`：confidence 改用 base × (0.5 + 0.5 × margin)，明確反映 tie（同 family 兄弟 fault）的模糊性
+- `api_server.py`：rate limit middleware（環境變數 `API_RATE_LIMIT_ENABLED=1` 啟用，預設關閉；路徑可設定）
+- `_ensure_buffer`：thread-safe 加鎖 + cache，支援並發寫
+- 9 個新測試（5 個 confidence、3 個 rate limit、1 個 50-concurrent stress）
 
 ### 早先（commit b2af005）— CODEX_REVIEW 4 個修補
 - `bb_tools.py` 同名覆蓋、`de_tools.py` SQL LIMIT、`router.py` P2P 節流、`tests/conftest.py` 硬編碼路徑

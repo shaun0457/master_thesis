@@ -109,6 +109,35 @@ def _scan_evidence_sensors(state: dict[str, Any], top_candidates: list[dict]) ->
     return []
 
 
+def _weighted_confidence(
+    candidates: list[dict],
+    predicted: Optional[int],
+) -> Optional[float]:
+    """Phase 6: confidence weighted by margin over the runner-up.
+
+    base = candidate's Jaccard score
+    margin = base − second_best_score (or base if only one)
+    confidence = base * (0.5 + 0.5 * margin)  → in [base/2, base]
+
+    A tight top-1 with no runner-up gets full base; a close second-place
+    drops confidence proportionally. Caps at 1.0, floors at 0.
+    """
+    if not candidates or predicted is None:
+        return None
+    chosen = next(
+        (c for c in candidates if c.get("fault_id") == predicted),
+        candidates[0],
+    )
+    base = float(chosen.get("score") or 0.0)
+    if base <= 0:
+        return 0.0
+    others = [c for c in candidates if c is not chosen]
+    second = max((float(c.get("score") or 0.0) for c in others), default=0.0)
+    margin = max(0.0, base - second)
+    confidence = base * (0.5 + 0.5 * margin)
+    return max(0.0, min(1.0, round(confidence, 4)))
+
+
 def _persist_diagnosis(
     db_path: str,
     result: DiagnosisResult,
@@ -281,14 +310,7 @@ def diagnose(
     evidence = _scan_evidence_sensors(state, candidates)
 
     fault_name = f"IDV_{predicted}" if predicted is not None else None
-    confidence = None
-    if candidates:
-        for c in candidates:
-            if c.get("fault_id") == predicted:
-                confidence = float(c.get("score") or 0.0)
-                break
-        if confidence is None:
-            confidence = float(candidates[0].get("score") or 0.0)
+    confidence = _weighted_confidence(candidates, predicted)
 
     result = DiagnosisResult(
         run_id=run_id,

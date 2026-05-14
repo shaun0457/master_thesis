@@ -23,8 +23,10 @@ import uuid
 from typing import Any, Optional
 
 import pandas as pd
-from fastapi import BackgroundTasks, FastAPI, HTTPException
-from fastapi.responses import HTMLResponse
+import threading
+from collections import deque
+from fastapi import BackgroundTasks, FastAPI, HTTPException, Request
+from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel, Field
 
 BASE = os.path.dirname(os.path.abspath(__file__))
@@ -35,6 +37,36 @@ INBOX_DIR = os.path.join(BASE, "inbox")
 os.makedirs(INBOX_DIR, exist_ok=True)
 
 app = FastAPI(title="TEP Fault Diagnosis MAS", version="0.1.0")
+
+
+# ----------------------- Rate limiting (Phase 6) ----------------------- #
+RATE_LIMIT_ENABLED = os.environ.get("API_RATE_LIMIT_ENABLED", "0") == "1"
+RATE_LIMIT_RPM = int(os.environ.get("API_RATE_LIMIT_RPM", "60"))
+RATE_LIMIT_PATHS = {"/diagnose", "/diagnose/window", "/admin/baseline"}
+_rate_buckets: dict[str, deque] = {}
+_rate_lock = threading.Lock()
+
+
+@app.middleware("http")
+async def _rate_limit_middleware(request: Request, call_next):
+    if RATE_LIMIT_ENABLED and request.url.path in RATE_LIMIT_PATHS:
+        client = (request.client.host if request.client else "unknown")
+        bucket_key = f"{client}:{request.url.path}"
+        now = time.time()
+        cutoff = now - 60.0
+        with _rate_lock:
+            bucket = _rate_buckets.setdefault(bucket_key, deque())
+            while bucket and bucket[0] < cutoff:
+                bucket.popleft()
+            if len(bucket) >= RATE_LIMIT_RPM:
+                retry_after = max(1, int(60 - (now - bucket[0])))
+                return JSONResponse(
+                    status_code=429,
+                    content={"detail": f"rate limit {RATE_LIMIT_RPM}/min exceeded",
+                             "retry_after_s": retry_after},
+                )
+            bucket.append(now)
+    return await call_next(request)
 
 
 # ----------------------- Models ----------------------- #
@@ -98,10 +130,20 @@ class HealthResponse(BaseModel):
 
 # ----------------------- Helpers ----------------------- #
 
+_buffer_init_lock = threading.Lock()
+_buffer_initialised: set[str] = set()
+
+
 def _ensure_buffer() -> None:
-    if not os.path.exists(BUFFER_DB):
+    """Thread-safe lazy init. Idempotent + cached per DB path."""
+    if BUFFER_DB in _buffer_initialised:
+        return
+    with _buffer_init_lock:
+        if BUFFER_DB in _buffer_initialised:
+            return
         from scripts.init_live_buffer import init  # type: ignore
         init(BUFFER_DB)
+        _buffer_initialised.add(BUFFER_DB)
 
 
 def _persist_observations(
