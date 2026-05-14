@@ -21,10 +21,10 @@ Do not use it for long-term architecture explanation. That belongs in:
 
 ## Current Status
 
-- Regression baseline: `pytest tests/ -q → 111 passed` (2026-05-14, after Phase 3.5)
+- Regression baseline: `pytest tests/ -q → 119 passed` (2026-05-14, after Phase TS)
 - Live evaluation baseline: `9/9 PASS` (2026-05-13)
 - 執行中工作軌：**Production-Ready Fault Diagnosis Pipeline**（Plan: `C:\Users\chengting\.claude\plans\jolly-plotting-spring.md`）
-- 已完成 Phase 1, 2, 3, 3.5（共 6 個 phase）；**準備進入 Phase 4 前等待 user 確認**
+- 已完成 Phase 1, 2, 3, 3.5, **TS**（共 7 個 phase）；準備進入 Phase 4
 
 ## Current Phase
 
@@ -54,6 +54,13 @@ Phase: production diagnosis pipeline — **Phase 4 待啟動** (Supervisor promp
 - `stream_simulator.py`：synthetic SCADA feed，支援 `--pattern "normal:60,fault4:30"` 排程注入
 - `file_watcher.py`：監看 inbox/ 自動 POST /diagnose
 - 6 個新測試（pattern parsing, row stripping, posting, run_once flow）
+
+### Diagnosis Pipeline — Phase TS (time-series semantics)
+- `scripts/init_live_buffer.py`：observations 加 `sample_idx`, `simulationrun` 欄位 + 冪等 ALTER migration
+- `stream_simulator.py`：refactor 為 stateful `RunCursor` (sample-by-sample walk)；rollover 到下個 run；phase 切換重建 cursor；新增 `--start-sample`、`--run-idx`；POST 附 `sample_indices` / `simulationruns` 陣列
+- `api_server.py`：新端點 `POST /diagnose/window`（取 buffer 最近 N 筆做診斷）；IngestRequest 接受新欄位；`_persist_observations` 寫入 sample axis
+- 14 個新/改寫測試：cursor 推進、run rollover、新 payload shape、window 端點 4 條路徑（empty/last_n/source filter/explicit truth）
+- 既存 buffer migration 已驗證（2 個 ALTER 成功，欄位齊全）
 
 ### 早先（commit b2af005）— CODEX_REVIEW 4 個修補
 - `bb_tools.py` 同名覆蓋、`de_tools.py` SQL LIMIT、`router.py` P2P 節流、`tests/conftest.py` 硬編碼路徑

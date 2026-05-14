@@ -1,11 +1,13 @@
 """Initialize live_observations.db — the rolling buffer for streamed sensor data.
 
 Schema:
-    observations(obs_id, ts, source, true_fault_hidden, payload_json)
+    observations(obs_id, ts, source, true_fault_hidden, payload_json,
+                 sample_idx, simulationrun)
     diagnoses(run_id, ts, obs_ids_json, predicted_fault, confidence,
               evidence_json, summary, true_fault_optional)
 
-Indices on ts and obs_id for fast recent-window queries.
+`sample_idx` and `simulationrun` are populated by the stream simulator so
+window queries can preserve TEP sample-axis ordering.
 
 Usage:
     python scripts/init_live_buffer.py [--reset]
@@ -20,17 +22,18 @@ import sys
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DEFAULT_DB = os.path.join(BASE, "live_observations.db")
 
-SCHEMA = [
+TABLES = [
     """
     CREATE TABLE IF NOT EXISTS observations (
         obs_id              INTEGER PRIMARY KEY AUTOINCREMENT,
         ts                  REAL NOT NULL,
         source              TEXT NOT NULL DEFAULT 'unknown',
         true_fault_hidden   INTEGER,
-        payload_json        TEXT NOT NULL
+        payload_json        TEXT NOT NULL,
+        sample_idx          INTEGER,
+        simulationrun       INTEGER
     )
     """,
-    "CREATE INDEX IF NOT EXISTS idx_obs_ts ON observations(ts)",
     """
     CREATE TABLE IF NOT EXISTS diagnoses (
         run_id              TEXT PRIMARY KEY,
@@ -43,8 +46,38 @@ SCHEMA = [
         true_fault_optional INTEGER
     )
     """,
+]
+
+INDICES = [
+    "CREATE INDEX IF NOT EXISTS idx_obs_ts ON observations(ts)",
+    "CREATE INDEX IF NOT EXISTS idx_obs_sample ON observations(sample_idx)",
     "CREATE INDEX IF NOT EXISTS idx_diag_ts ON diagnoses(ts)",
 ]
+
+MIGRATIONS = [
+    "ALTER TABLE observations ADD COLUMN sample_idx INTEGER",
+    "ALTER TABLE observations ADD COLUMN simulationrun INTEGER",
+]
+
+
+def _table_columns(conn: sqlite3.Connection, table: str) -> set[str]:
+    return {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
+
+
+def _migrate(conn: sqlite3.Connection) -> int:
+    """Add new columns to existing observations tables. Idempotent."""
+    if not _table_columns(conn, "observations"):
+        return 0
+    applied = 0
+    for stmt in MIGRATIONS:
+        try:
+            conn.execute(stmt)
+            applied += 1
+        except sqlite3.OperationalError as e:
+            # column already exists — that's fine
+            if "duplicate column" not in str(e).lower():
+                raise
+    return applied
 
 
 def init(db_path: str = DEFAULT_DB, reset: bool = False) -> str:
@@ -54,13 +87,17 @@ def init(db_path: str = DEFAULT_DB, reset: bool = False) -> str:
 
     conn = sqlite3.connect(db_path)
     try:
-        for stmt in SCHEMA:
+        for stmt in TABLES:
+            conn.execute(stmt)
+        applied = _migrate(conn)
+        for stmt in INDICES:
             conn.execute(stmt)
         conn.commit()
     finally:
         conn.close()
 
-    print(f"[ok] live buffer ready at {db_path}")
+    suffix = f" (migrations: {applied})" if applied else ""
+    print(f"[ok] live buffer ready at {db_path}{suffix}")
     return db_path
 
 

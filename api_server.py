@@ -47,11 +47,23 @@ class IngestRequest(BaseModel):
     source: str = Field(default="manual", description="Source label (simulator, scada, manual)")
     true_fault_hidden: Optional[int] = Field(default=None, description="Ground truth (for QA only)")
     rows: list[dict[str, Any]] = Field(..., description="One or more sensor rows")
+    sample_indices: Optional[list[Optional[int]]] = Field(default=None,
+                                                          description="Per-row sample_idx (TS)")
+    simulationruns: Optional[list[Optional[int]]] = Field(default=None,
+                                                         description="Per-row simulationrun (TS)")
 
 
 class IngestResponse(BaseModel):
     inserted: int
     obs_ids: list[int]
+
+
+class WindowDiagnoseRequest(BaseModel):
+    window_size: int = Field(default=50, ge=1, le=1000, description="Recent rows to diagnose")
+    source: Optional[str] = Field(default=None, description="Filter buffer by source label")
+    true_fault: Optional[int] = Field(default=None,
+                                      description="Override true_fault; else inferred from majority of buffered rows")
+    recursion_limit: int = 60
 
 
 class DiagnoseRequest(BaseModel):
@@ -91,18 +103,30 @@ def _ensure_buffer() -> None:
         init(BUFFER_DB)
 
 
-def _persist_observations(rows: list[dict], source: str, true_fault: Optional[int]) -> list[int]:
+def _persist_observations(
+    rows: list[dict],
+    source: str,
+    true_fault: Optional[int],
+    sample_indices: Optional[list[Optional[int]]] = None,
+    simulationruns: Optional[list[Optional[int]]] = None,
+) -> list[int]:
     _ensure_buffer()
     ts = time.time()
     ids: list[int] = []
     conn = sqlite3.connect(BUFFER_DB)
     try:
         cur = conn.cursor()
-        for row in rows:
+        for i, row in enumerate(rows):
+            s_idx = (sample_indices[i] if sample_indices and i < len(sample_indices) else
+                     row.get("sample"))
+            sr = simulationruns[i] if simulationruns and i < len(simulationruns) else None
             cur.execute(
-                "INSERT INTO observations (ts, source, true_fault_hidden, payload_json) "
-                "VALUES (?, ?, ?, ?)",
-                (ts, source, true_fault, json.dumps(row, ensure_ascii=False)),
+                "INSERT INTO observations "
+                "(ts, source, true_fault_hidden, payload_json, sample_idx, simulationrun) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                (ts, source, true_fault, json.dumps(row, ensure_ascii=False),
+                 int(s_idx) if s_idx is not None else None,
+                 int(sr) if sr is not None else None),
             )
             ids.append(int(cur.lastrowid))
         conn.commit()
@@ -137,7 +161,8 @@ def index() -> dict[str, Any]:
     return {
         "name": "TEP Fault Diagnosis MAS",
         "endpoints": [
-            "POST /diagnose", "POST /observations", "GET /observations",
+            "POST /diagnose", "POST /diagnose/window",
+            "POST /observations", "GET /observations",
             "GET /diagnoses", "POST /admin/baseline", "GET /health",
         ],
     }
@@ -168,8 +193,13 @@ def health() -> HealthResponse:
 def ingest_observations(req: IngestRequest) -> IngestResponse:
     if not req.rows:
         raise HTTPException(status_code=400, detail="rows must be non-empty")
-    ids = _persist_observations(req.rows, source=req.source,
-                                true_fault=req.true_fault_hidden)
+    ids = _persist_observations(
+        req.rows,
+        source=req.source,
+        true_fault=req.true_fault_hidden,
+        sample_indices=req.sample_indices,
+        simulationruns=req.simulationruns,
+    )
     return IngestResponse(inserted=len(ids), obs_ids=ids)
 
 
@@ -237,6 +267,56 @@ def diagnose_endpoint(req: DiagnoseRequest) -> DiagnoseResponse:
     result = run_diagnose(
         observation_path=obs_path,
         true_fault=req.true_fault,
+        buffer_db=BUFFER_DB,
+        recursion_limit=req.recursion_limit,
+        obs_ids=obs_ids,
+    )
+    return DiagnoseResponse(**result.to_dict())
+
+
+@app.post("/diagnose/window", response_model=DiagnoseResponse)
+def diagnose_window(req: WindowDiagnoseRequest) -> DiagnoseResponse:
+    """Pull the last N observations from the buffer and diagnose them as a batch."""
+    _ensure_buffer()
+    conn = sqlite3.connect(BUFFER_DB)
+    try:
+        if req.source:
+            rows = conn.execute(
+                "SELECT obs_id, payload_json, true_fault_hidden, sample_idx "
+                "FROM observations WHERE source = ? ORDER BY obs_id DESC LIMIT ?",
+                (req.source, int(req.window_size)),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT obs_id, payload_json, true_fault_hidden, sample_idx "
+                "FROM observations ORDER BY obs_id DESC LIMIT ?",
+                (int(req.window_size),),
+            ).fetchall()
+    finally:
+        conn.close()
+
+    if not rows:
+        raise HTTPException(status_code=404, detail="no observations in buffer")
+
+    # Chronological order
+    rows = list(reversed(rows))
+    obs_ids = [int(r[0]) for r in rows]
+    payloads = [json.loads(r[1]) for r in rows]
+    truth_labels = [r[2] for r in rows if r[2] is not None]
+
+    inferred_truth = req.true_fault
+    if inferred_truth is None and truth_labels:
+        inferred_truth = max(set(truth_labels), key=truth_labels.count)
+
+    df = pd.DataFrame(payloads)
+    tmp = tempfile.NamedTemporaryFile(suffix=".parquet", delete=False)
+    tmp.close()
+    df.to_parquet(tmp.name, index=False)
+
+    from diagnose_flow import diagnose as run_diagnose
+    result = run_diagnose(
+        observation_path=tmp.name,
+        true_fault=inferred_truth,
         buffer_db=BUFFER_DB,
         recursion_limit=req.recursion_limit,
         obs_ids=obs_ids,

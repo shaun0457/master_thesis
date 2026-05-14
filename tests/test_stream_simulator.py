@@ -1,4 +1,8 @@
-"""Tests for stream_simulator pattern parsing + row fetching + posting."""
+"""Tests for the stateful stream simulator (Phase TS).
+
+Covers: pattern parsing, cursor walk advancement, run roll-over, phase
+transitions reset cursor, payload shape includes sample_idx + simulationrun.
+"""
 from __future__ import annotations
 
 import os
@@ -6,7 +10,6 @@ os.environ.setdefault("GOOGLE_API_KEY", "dummy-key-for-unit-test")
 
 import sqlite3
 from pathlib import Path
-from unittest.mock import MagicMock
 
 import pytest
 
@@ -30,6 +33,7 @@ def test_parse_pattern_rejects_bad_spec():
 
 
 def _make_mini_db(tmp_path: Path) -> str:
+    """Synthetic DB with 2 runs per fault (4 and 0), 10 samples each."""
     db = tmp_path / "mini.db"
     conn = sqlite3.connect(db)
     try:
@@ -39,37 +43,86 @@ def _make_mini_db(tmp_path: Path) -> str:
                 xmeas_1 REAL, xmeas_9 REAL, xmv_6 REAL
             )
         """)
-        # Two runs of fault=4
-        for run in (1, 2):
-            for s in range(1, 6):
-                conn.execute(
-                    "INSERT INTO process_data VALUES (?, ?, ?, ?, ?, ?)",
-                    (4.0, run, s, 0.1, 120.0 + s, 42.0),
-                )
+        for fault in (0, 4):
+            for run in (1, 2):
+                for s in range(1, 11):
+                    conn.execute(
+                        "INSERT INTO process_data VALUES (?, ?, ?, ?, ?, ?)",
+                        (float(fault), run, s, 0.1, 100.0 + s, 42.0),
+                    )
         conn.commit()
     finally:
         conn.close()
     return str(db)
 
 
-def test_fetch_rows_strips_label_columns(tmp_path):
-    from stream_simulator import _fetch_rows
+def test_build_cursor_picks_a_run():
+    from stream_simulator import _build_cursor
+    import tempfile
+    import pathlib
+
+    tmp_dir = pathlib.Path(tempfile.mkdtemp())
+    db = _make_mini_db(tmp_dir)
+    conn = sqlite3.connect(db)
+    try:
+        cursor = _build_cursor(conn, fault=4, seed=0, run_idx=1, start_sample=3)
+    finally:
+        conn.close()
+    assert cursor is not None
+    assert cursor.fault == 4
+    assert cursor.run_idx == 1
+    assert cursor.next_sample == 3
+    assert cursor.available_runs == [1, 2]
+
+
+def test_build_cursor_returns_none_for_unknown_fault(tmp_path):
+    from stream_simulator import _build_cursor
+    db = _make_mini_db(tmp_path)
+    conn = sqlite3.connect(db)
+    try:
+        cursor = _build_cursor(conn, fault=99, seed=0)
+    finally:
+        conn.close()
+    assert cursor is None
+
+
+def test_walk_one_tick_advances_sample_idx_linearly(tmp_path):
+    from stream_simulator import _build_cursor, _walk_one_tick
+    db = _make_mini_db(tmp_path)
+    conn = sqlite3.connect(db)
+    try:
+        cursor = _build_cursor(conn, fault=4, seed=0, run_idx=1, start_sample=1)
+        first = _walk_one_tick(conn, cursor, 3)
+        second = _walk_one_tick(conn, cursor, 3)
+    finally:
+        conn.close()
+    assert [r["sample_idx"] for r in first] == [1, 2, 3]
+    assert [r["sample_idx"] for r in second] == [4, 5, 6]
+    # payload strips label columns
+    for r in first:
+        assert "faultnumber" not in r["payload"]
+        assert "simulationrun" not in r["payload"]
+        assert r["simulationrun"] == 1
+
+
+def test_walk_one_tick_rolls_over_to_next_run(tmp_path):
+    from stream_simulator import _build_cursor, _walk_one_tick
 
     db = _make_mini_db(tmp_path)
     conn = sqlite3.connect(db)
     try:
-        rows = _fetch_rows(conn, fault=4, n=3, seed=0)
+        # Start near end of run 1 (which has only 10 samples)
+        cursor = _build_cursor(conn, fault=4, seed=0, run_idx=1, start_sample=9)
+        batch = _walk_one_tick(conn, cursor, 4)
     finally:
         conn.close()
-
-    assert len(rows) == 3
-    for row in rows:
-        assert "faultnumber" not in row
-        assert "simulationrun" not in row
-        assert "xmeas_9" in row
+    runs_seen = {r["simulationrun"] for r in batch}
+    # Should span both run 1 (samples 9, 10) and run 2 (samples 1, 2)
+    assert runs_seen == {1, 2}
+    assert [r["sample_idx"] for r in batch] == [9, 10, 1, 2]
 
 
-def test_post_observations_sends_payload(monkeypatch):
+def test_post_observations_includes_sample_axis_arrays():
     from stream_simulator import _post_observations
 
     captured = {}
@@ -80,16 +133,20 @@ def test_post_observations_sends_payload(monkeypatch):
 
     class FakeClient:
         def post(self, url, json=None, timeout=None):
-            captured["url"] = url
             captured["json"] = json
             return FakeResp()
 
-    ok = _post_observations(FakeClient(), "http://x", [{"xmeas_9": 120.0}], 4, "simulator")
+    batch = [
+        {"payload": {"xmeas_9": 105.0}, "sample_idx": 1, "simulationrun": 1},
+        {"payload": {"xmeas_9": 106.0}, "sample_idx": 2, "simulationrun": 1},
+    ]
+    ok = _post_observations(FakeClient(), "http://x", batch, 4, "simulator")
     assert ok is True
-    assert captured["url"].endswith("/observations")
-    assert captured["json"]["true_fault_hidden"] == 4
-    assert captured["json"]["source"] == "simulator"
-    assert captured["json"]["rows"] == [{"xmeas_9": 120.0}]
+    payload = captured["json"]
+    assert payload["sample_indices"] == [1, 2]
+    assert payload["simulationruns"] == [1, 1]
+    assert payload["true_fault_hidden"] == 4
+    assert payload["rows"] == [{"xmeas_9": 105.0}, {"xmeas_9": 106.0}]
 
 
 def test_post_observations_handles_non_200():
@@ -103,14 +160,13 @@ def test_post_observations_handles_non_200():
         def post(self, *a, **kw):
             return FakeResp()
 
-    assert _post_observations(FakeClient(), "http://x", [{}], 0, "simulator") is False
+    assert _post_observations(FakeClient(), "http://x", [], 0, "sim") is False
 
 
 def test_run_once_full_flow(tmp_path, monkeypatch):
     from stream_simulator import run_once
 
     db = _make_mini_db(tmp_path)
-
     posted = {}
 
     class FakeResp:
@@ -129,7 +185,10 @@ def test_run_once_full_flow(tmp_path, monkeypatch):
             return FakeResp()
 
     monkeypatch.setattr("stream_simulator.httpx.Client", lambda: FakeClient())
-    code = run_once("http://x", db, fault=4, rows=4, seed=0)
+    code = run_once("http://x", db, fault=4, rows=5, seed=0,
+                    run_idx=1, start_sample=1)
     assert code == 0
-    assert len(posted["json"]["rows"]) == 4
-    assert posted["json"]["true_fault_hidden"] == 4
+    payload = posted["json"]
+    assert len(payload["rows"]) == 5
+    assert payload["sample_indices"] == [1, 2, 3, 4, 5]
+    assert payload["true_fault_hidden"] == 4
