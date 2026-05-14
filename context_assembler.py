@@ -5,8 +5,17 @@ System prompt target: ≤300 tokens per agent (vs ~1,700 tokens with old .md car
 Dynamic context (blackboard snapshot, task) is injected as HumanMessage, not system prompt.
 """
 from __future__ import annotations
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from langchain_core.messages import BaseMessage, HumanMessage, AIMessage, ToolMessage
+from subagent_contracts import (
+    ContextPack,
+    SubagentTaskTicket,
+    artifact_refs_from_blackboard,
+    evidence_strings_from_blackboard,
+    render_context_pack,
+    render_task_contract,
+    summarize_history_tail,
+)
 
 CONTEXT_WARN_TOKENS = 12_000
 MAX_TOOL_MSG_CHARS = 800
@@ -165,6 +174,32 @@ class DynamicContextAssembler:
 
         parts.append(f"[Task]\n{task_text}")
         return [HumanMessage(content="\n\n".join(parts))]
+
+    def build_context_pack(
+        self,
+        *,
+        state: Dict[str, Any],
+        ticket: SubagentTaskTicket,
+        role_prompt: str,
+        runtime_limits: Optional[Dict[str, Any]] = None,
+        history_tail_limit: int = 4,
+    ) -> ContextPack:
+        blackboard = state.get("blackboard") or {}
+        evidence_lines = evidence_strings_from_blackboard(blackboard, topic_id=ticket.topic_id)
+        ready_for = "DS" if ticket.to_agent == "DS" else None
+        artifact_refs = artifact_refs_from_blackboard(blackboard, ready_for=ready_for)
+        return ContextPack(
+            ticket_id=ticket.ticket_id,
+            role_prompt=role_prompt,
+            task_contract=render_task_contract(ticket),
+            evidence_pack="\n".join(f"- {line}" for line in evidence_lines) if evidence_lines else "",
+            artifact_refs=artifact_refs,
+            history_tail=summarize_history_tail(state.get("messages", []) or [], limit=history_tail_limit),
+            runtime_limits=runtime_limits or {},
+        )
+
+    def assemble_contract_messages(self, pack: ContextPack) -> List[BaseMessage]:
+        return [HumanMessage(content=render_context_pack(pack))]
 
     def estimate_tokens(self, messages: List[BaseMessage]) -> int:
         """Fast token estimate: chars / 4. No API call."""

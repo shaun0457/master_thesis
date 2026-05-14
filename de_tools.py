@@ -418,10 +418,18 @@ def deliver_dataframe(df_json: str) -> str:
         ref = {"name": os.path.basename(parquet_path), "path": parquet_path, "run_id": run_id}
 
         # 優先用 helper；失敗再退回 Tool 版本
+        artifact_id = ""
         try:
             from bb_tools import bb_register_dataset_path
-            bb_register_dataset_path(run_id, ref["name"], parquet_path,
-                                     meta={"source": "deliver_dataframe", "sampled": False})
+            reg = bb_register_dataset_path(
+                run_id,
+                ref["name"],
+                parquet_path,
+                rows=int(len(df)),
+                columns=list(map(str, df.columns)),
+                meta={"source": "deliver_dataframe", "sampled": False, "ready_for": "DS"},
+            )
+            artifact_id = ((reg or {}).get("dataset") or {}).get("artifact_id", "")
         except Exception:
             try:
                 from bb_tools import bb_register_dataset
@@ -440,7 +448,14 @@ def deliver_dataframe(df_json: str) -> str:
         except Exception:
             pass
 
-        return json.dumps({"status": "ok", "df_payload": ref, "format": fmt, "rowcount": int(len(df))}, ensure_ascii=False)
+        return json.dumps({
+            "status": "ok",
+            "artifact_id": artifact_id,
+            "df_payload": ref,
+            "format": fmt,
+            "rowcount": int(len(df)),
+            "columns": list(map(str, df.columns)),
+        }, ensure_ascii=False)
 
     except Exception as e:
         try:

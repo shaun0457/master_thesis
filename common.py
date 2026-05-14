@@ -122,6 +122,12 @@ class AgentState(TypedDict, total=False):
     # 2026 harness
     token_usage: Dict[str, Any]
     harness_metrics: Dict[str, Any]
+    active_ticket: Dict[str, Any]
+    ticket_ledger: List[Dict[str, Any]]
+    runtime_limits: Dict[str, Any]
+    runtime_events: List[Dict[str, Any]]
+    context_pressure: List[Dict[str, Any]]
+    handoff_status: Dict[str, Any]
 
 # ===== 日志记录辅助 =====
 def _msg_to_dict(msg: BaseMessage) -> dict:

@@ -14,8 +14,42 @@ import bb_tools
 import time
 from metrics import note_tool_event
 from run_logger import emit_bb_write, emit_bb_read, note_tool_call
+from subagent_contracts import (
+    ContextPack,
+    DelegateRequest,
+    HandoffValidationResult,
+    SubagentResultEnvelope,
+    SubagentTaskTicket,
+    build_ticket,
+    normalize_delegate_request,
+    render_context_pack,
+    validate_de_to_ds,
+    validate_ds_to_supervisor,
+    validate_me_to_de,
+)
 
 POLICY = 'minimal'
+DEFAULT_RUNTIME_LIMITS = {
+    "max_context_tokens": 6000,
+    "max_delegate_depth": 3,
+    "max_tool_calls": 12,
+    "max_llm_calls": 12,
+}
+
+
+def _runtime_limits_from_state(state: Dict[str, Any]) -> Dict[str, Any]:
+    limits = dict(DEFAULT_RUNTIME_LIMITS)
+    limits.update(state.get("runtime_limits") or {})
+    return limits
+
+
+def _record_runtime_event(state: Dict[str, Any], **event: Any) -> None:
+    state.setdefault("runtime_events", []).append(event)
+
+
+def _record_ticket(state: Dict[str, Any], ticket: SubagentTaskTicket) -> None:
+    state["active_ticket"] = ticket.model_dump()
+    state.setdefault("ticket_ledger", []).append(ticket.model_dump())
 
 
 # ---------------------------------------------------------------------------
@@ -177,6 +211,15 @@ class _TopicCtx:
             self.state.pop("topic_ctx", None)
 
 
+class RequestDelegateArgs(BaseModel):
+    to_agent: Literal["ME", "DE", "DS"] = Field(..., description="Target peer agent.")
+    goal: str = Field(..., description="Outcome requested from the peer.")
+    task_text: str = Field(..., description="Concrete delegated task text.")
+    required_inputs: List[str] = Field(default_factory=list, description="Inputs the peer must rely on.")
+    success_criteria: Optional[str] = Field(None, description="Definition of done for the delegated task.")
+    priority: Literal["low", "normal", "high"] = Field("normal", description="Delegation urgency.")
+
+
 def make_p2p_tools(state: dict, agent_name: str) -> Tuple[List, List]:
     """
     建立 P2P 工具（含 request_delegate）並回傳 (tools, p2p_req_box)
@@ -186,24 +229,49 @@ def make_p2p_tools(state: dict, agent_name: str) -> Tuple[List, List]:
     rl = get_run_logger()
     p2p_req_box: List[Dict[str, Any]] = []
 
-    @tool("request_delegate")
-    def request_delegate(to: str, task: str) -> str:
-        """Record a peer-to-peer delegate request; Supervisor/Router may pick it up."""
-        to_norm = (to or "").strip().upper()
-        if to_norm not in {"DS", "DE", "ME"}:
-            return "Error: 'to' must be one of DS/DE/ME."
-        p2p_req_box.append({"to": to_norm, "task": task})
+    @tool("request_delegate", args_schema=RequestDelegateArgs)
+    def request_delegate(
+        to_agent: str,
+        goal: str,
+        task_text: str,
+        required_inputs: Optional[List[str]] = None,
+        success_criteria: Optional[str] = None,
+        priority: str = "normal",
+    ) -> str:
+        """Record a structured peer-to-peer delegate request; Supervisor/Router may pick it up."""
+        active_ticket = state.get("active_ticket") or {}
+        try:
+            req = normalize_delegate_request(
+                {
+                    "to_agent": to_agent,
+                    "goal": goal,
+                    "task_text": task_text,
+                    "required_inputs": required_inputs or [],
+                    "success_criteria": success_criteria or "",
+                    "priority": priority,
+                    "parent_ticket_id": active_ticket.get("ticket_id"),
+                    "depth": int(active_ticket.get("depth", 0)) + 1,
+                },
+                from_agent=agent_name,
+                topic_id=(state.get("topic_ctx") or {}).get("topic_id") or state.get("topic_id") or "",
+                owner=(state.get("topic_ctx") or {}).get("owner") or state.get("owner") or agent_name,
+                parent_ticket_id=active_ticket.get("ticket_id"),
+                depth=int(active_ticket.get("depth", 0)) + 1,
+            )
+        except Exception as e:
+            return f"Error: {e}"
+        p2p_req_box.append(req.model_dump())
 
         # 記「私訊」事件，供 ETL 統計 side-channel / 私訊委派
         try:
             emit_event({
                 "event_type": "message",
                 "agent": agent_name,
-                "addressed_to": to_norm,
+                "addressed_to": req.to_agent,
                 "channel": "private",
                 "topic_id": (state.get("topic_ctx") or {}).get("topic_id") or state.get("topic_id") or "",
                 "turn_index": int(state.get("turn_counter") or 0),
-                "content_text": (task or "")[:800],
+                "content_text": (task_text or "")[:800],
             }, state=state)
         except Exception:
             pass
@@ -221,12 +289,12 @@ def make_p2p_tools(state: dict, agent_name: str) -> Tuple[List, List]:
                 "agent": agent_name,
                 "tool": "request_delegate",
                 "ok": True,
-                "args": {"to": to_norm, "task": task}
+                "args": req.model_dump()
             })
         except Exception:
             pass
 
-        return f"Request to delegate to '{to_norm}' recorded."
+        return f"Request to delegate to '{req.to_agent}' recorded."
 
     return [request_delegate], p2p_req_box
 
@@ -765,27 +833,52 @@ def make_blackboard_tools(state: Dict[str, Any], agent_name: str) -> Tuple[List,
         })
         return f"Successfully wrote to blackboard section '{section}'."
 
-    @tool("request_delegate")
-    def request_delegate(to: str, task: str) -> str:
-        """Record a peer-to-peer delegate request for the router."""
-        to_norm = (to or "").strip().upper()
-        if to_norm not in {"DS", "DE", "ME"}:
-            return "Error: 'to' must be one of DS/DE/ME."
-        p2p_req_box.append({"to": to_norm, "task": task})
+    @tool("request_delegate", args_schema=RequestDelegateArgs)
+    def request_delegate(
+        to_agent: str,
+        goal: str,
+        task_text: str,
+        required_inputs: Optional[List[str]] = None,
+        success_criteria: Optional[str] = None,
+        priority: str = "normal",
+    ) -> str:
+        """Record a structured peer-to-peer delegate request for the router."""
+        active_ticket = state.get("active_ticket") or {}
+        try:
+            req = normalize_delegate_request(
+                {
+                    "to_agent": to_agent,
+                    "goal": goal,
+                    "task_text": task_text,
+                    "required_inputs": required_inputs or [],
+                    "success_criteria": success_criteria or "",
+                    "priority": priority,
+                    "parent_ticket_id": active_ticket.get("ticket_id"),
+                    "depth": int(active_ticket.get("depth", 0)) + 1,
+                },
+                from_agent=agent_name,
+                topic_id=_topic_id(),
+                owner=_owner(),
+                parent_ticket_id=active_ticket.get("ticket_id"),
+                depth=int(active_ticket.get("depth", 0)) + 1,
+            )
+        except Exception as e:
+            return f"Error: {e}"
+        p2p_req_box.append(req.model_dump())
 
         with rl.tool_exec(agent=agent_name, tool="request_delegate",
                           task_id=os.getenv("TASK_ID"),
-                          args={"to": to_norm, "task": task}) as t:
+                          args=req.model_dump()) as t:
             t.ok(True)
 
         emit_event({
             "event_type": "message",
             "agent": agent_name,
-            "addressed_to": to_norm,
+            "addressed_to": req.to_agent,
             "channel": "private",
             "topic_id": _topic_id(),
             "turn_index": int(state.get("turn_counter") or 0),
-            "content_head": (task or "")[:160],
+            "content_head": (task_text or "")[:160],
         }, state=state)
 
         emit_compliance(state=state, side_channel_increment=1)
@@ -795,9 +888,9 @@ def make_blackboard_tools(state: Dict[str, Any], agent_name: str) -> Tuple[List,
             "agent": agent_name,
             "tool": "request_delegate",
             "ok": True,
-            "args": {"to": to_norm, "task": task},
+            "args": req.model_dump(),
         })
-        return f"Request to delegate to '{to_norm}' recorded."
+        return f"Request to delegate to '{req.to_agent}' recorded."
 
     return [read_blackboard, write_to_blackboard, request_delegate], p2p_req_box
 
@@ -898,8 +991,15 @@ _GRAPH_CACHE = {}
 #
 #     return graph.invoke(sub_state)
 
-def _invoke_stage1(agent: str, intro_msgs: List[HumanMessage], extra_tools: List, state: Dict[str, Any],
-                   success_criteria: Optional[str] = None):
+def _invoke_stage1(
+    agent: str,
+    intro_msgs: List[HumanMessage],
+    extra_tools: List,
+    state: Dict[str, Any],
+    *,
+    ticket: Optional[SubagentTaskTicket] = None,
+    context_pack: Optional[ContextPack] = None,
+):
     # 固定 policy 與取得角色卡
     policy = POLICY
     role_card_prompt = get_system_prompt(agent, policy)
@@ -997,10 +1097,13 @@ def _invoke_stage1(agent: str, intro_msgs: List[HumanMessage], extra_tools: List
     # === Anchor 方案：bb_index + task contract 作為最後一則 HumanMessage，不被壓縮 ===
     from context_assembler import DynamicContextAssembler as _DCA
     _ca = _DCA()
-    task_text = intro_msgs[-1].content if intro_msgs else "Please proceed with the delegated task."
-    bb_index = _format_bb_index(state.get("blackboard", {}))
-    contract = _format_task_contract(task_text, success_criteria)
-    anchor_msg = HumanMessage(content=f"{bb_index}\n\n{contract}")
+    if context_pack is None:
+        task_text = intro_msgs[-1].content if intro_msgs else "Please proceed with the delegated task."
+        bb_index = _format_bb_index(state.get("blackboard", {}))
+        contract = _format_task_contract(task_text, ticket.success_criteria if ticket else None)
+        anchor_msgs = [HumanMessage(content=f"{bb_index}\n\n{contract}")]
+    else:
+        anchor_msgs = _ca.assemble_contract_messages(context_pack)
     history_msgs = state.get("messages", [])
     compressed_history = _ca.compress_messages(history_msgs, target_tokens=6000)
     msgs = compressed_history + [anchor_msg]  # anchor 永遠在最後，不被截斷
@@ -1720,6 +1823,401 @@ def delegate_to_ds(task: str, state: Dict[str, Any],
             "topic_id": _topic_from(state, topic_id),
             "owner": _owner_from(state, owner),
         }
+        if p2p_box:
+            result["delegate_requests"] = list(p2p_box)
+        return result
+
+
+def continue_agent(agent_name: str, state: Dict[str, Any], feedback: str) -> Dict[str, Any]:
+    intro_note = f"[Feedback from Colleagues]\n{feedback}\n\n[Your Task]\nBased on this new information, continue your work."
+    return _run_subgraph(agent_name.upper(), state, "Continue your task based on the feedback.", intro_note)
+
+
+def _invoke_stage1(
+    agent: str,
+    intro_msgs: List[HumanMessage],
+    extra_tools: List,
+    state: Dict[str, Any],
+    *,
+    ticket: Optional[SubagentTaskTicket] = None,
+    context_pack: Optional[ContextPack] = None,
+):
+    policy = POLICY
+    role_card_prompt = get_system_prompt(agent, policy)
+    try:
+        from common import AgentState
+    except ImportError:
+        AgentState = dict
+
+    tools_mod = __import__(f"{agent.lower()}_tools")
+    get_tools_func = getattr(tools_mod, f"get_{agent.lower()}_tools")
+    tools_stage1, tool_map = get_tools_func("augmented")
+
+    def _tname(t):
+        return getattr(t, "name", getattr(t, "__name__", str(t)))
+
+    for t in tools_stage1:
+        nm = _tname(t)
+        if nm not in tool_map:
+            tool_map[nm] = t
+    for t in (extra_tools or []):
+        tool_map[_tname(t)] = t
+
+    merged = []
+    seen = set()
+    for t in (tools_stage1 or []) + (extra_tools or []):
+        nm = _tname(t)
+        if nm in seen:
+            for i in range(len(merged) - 1, -1, -1):
+                if _tname(merged[i]) == nm:
+                    merged.pop(i)
+                    break
+        seen.add(nm)
+        merged.append(t)
+    all_tools_for_agent = merged
+
+    workflow_module_name = "ds_workflow_s2" if agent == "DS" else f"{agent.lower()}_workflow"
+    wf_mod = __import__(workflow_module_name)
+    create_exec_func = getattr(wf_mod, f"create_{agent.lower()}_executor")
+    build_graph_func = getattr(wf_mod, f"build_{agent.lower()}_graph", None) or getattr(wf_mod, "build_graph")
+    if build_graph_func is None:
+        raise AttributeError(f"CRITICAL: Could not find build function in {workflow_module_name}.py")
+
+    executor = create_exec_func("augmented", all_tools_for_agent, system_prompt=role_card_prompt)
+    sig = inspect.signature(build_graph_func)
+    params = sig.parameters
+
+    def _noop_validator(s: dict) -> dict:
+        return s
+
+    build_args = {
+        "agent_state_cls": AgentState,
+        "executor": executor,
+        "de_executor": executor,
+        "ds_executor": executor,
+        "tool_map": tool_map,
+        "final_node_func": _noop_validator,
+        "ds_validator_node": _noop_validator,
+        "mode": "augmented",
+    }
+    if agent == "DS":
+        build_args["entry_point"] = "DataScientist"
+    graph = build_graph_func(**{p: build_args[p] for p in params if p in build_args})
+
+    rid = state.get("run_id") or os.getenv("RUN_ID") or f"run_{uuid.uuid4().hex[:8]}"
+    state["run_id"] = rid
+    os.environ["RUN_ID"] = str(rid)
+    if state.get("db_url"):
+        os.environ["DATABASE_URL"] = state["db_url"]
+
+    from context_assembler import DynamicContextAssembler as _DCA
+
+    _ca = _DCA()
+    history_msgs = state.get("messages", [])
+    compressed_history = _ca.compress_messages(history_msgs, target_tokens=6000)
+    if context_pack is not None:
+        anchor_msgs = _ca.assemble_contract_messages(context_pack)
+    else:
+        task_text = intro_msgs[-1].content if intro_msgs else "Please proceed with the delegated task."
+        bb_index = _format_bb_index(state.get("blackboard", {}))
+        contract = _format_task_contract(task_text, ticket.success_criteria if ticket else None)
+        anchor_msgs = [HumanMessage(content=f"{bb_index}\n\n{contract}")]
+    sub_state = {
+        "messages": compressed_history + anchor_msgs,
+        "metrics": {},
+        "tool_events": [],
+        "hits": [],
+        "blackboard": state.get("blackboard", {}),
+        "policy": policy,
+        "run_id": rid,
+        "active_ticket": ticket.model_dump() if ticket else state.get("active_ticket"),
+        "runtime_limits": state.get("runtime_limits", {}),
+    }
+    return graph.invoke(sub_state)
+
+
+def _build_ticket_for_agent(
+    *,
+    from_agent: str,
+    to_agent: str,
+    state: Dict[str, Any],
+    task_text: str,
+    success_criteria: Optional[str],
+    topic_id: Optional[str],
+    owner: Optional[str],
+    inputs: Optional[Dict[str, Any]] = None,
+) -> SubagentTaskTicket:
+    parent = state.get("active_ticket") or {}
+    return build_ticket(
+        from_agent=from_agent,
+        to_agent=to_agent,
+        topic_id=_topic_from(state, topic_id),
+        owner=_owner_from(state, owner) or to_agent,
+        goal=task_text,
+        task_text=task_text,
+        success_criteria=success_criteria or "",
+        inputs=inputs or {},
+        parent_ticket_id=parent.get("ticket_id"),
+        depth=int(parent.get("depth", -1)) + 1,
+    )
+
+
+def _validator_for(agent: str):
+    if agent == "ME":
+        return validate_me_to_de
+    if agent == "DE":
+        return validate_de_to_ds
+    return validate_ds_to_supervisor
+
+
+def _run_subgraph(
+    agent: str,
+    state: Dict[str, Any],
+    task_text: str,
+    intro_note: str,
+    *,
+    topic_id: Optional[str] = None,
+    owner: Optional[str] = None,
+    injected_tools: Optional[List[Any]] = None,
+    success_criteria: Optional[str] = None,
+    ticket: Optional[SubagentTaskTicket] = None,
+) -> Dict[str, Any]:
+    os.environ["SEED"] = str(get_seed(state))
+    os.environ["TASK_ID"] = state.get("task_id", "")
+    os.environ["PROMPT_CONDITION"] = state.get("prompt_condition", "")
+    set_global_seeds(get_seed(state))
+
+    runtime_limits = _runtime_limits_from_state(state)
+    state["runtime_limits"] = runtime_limits
+    ticket = ticket or _build_ticket_for_agent(
+        from_agent=str((state.get("current_agent") or "Supervisor")),
+        to_agent=agent,
+        state=state,
+        task_text=task_text,
+        success_criteria=success_criteria,
+        topic_id=topic_id,
+        owner=owner,
+    )
+    _record_ticket(state, ticket)
+
+    from context_assembler import DynamicContextAssembler as _DCA
+
+    assembler = _DCA()
+    role_prompt = assembler.assemble_system_prompt(agent)
+    context_pack = assembler.build_context_pack(
+        state=state,
+        ticket=ticket,
+        role_prompt=role_prompt,
+        runtime_limits=runtime_limits,
+    )
+    context_tokens = max(assembler.estimate_tokens([HumanMessage(content=render_context_pack(context_pack))]), 1)
+    state.setdefault("context_pressure", []).append(
+        {"ticket_id": ticket.ticket_id, "agent": agent, "estimated_tokens": context_tokens}
+    )
+    if context_tokens > int(runtime_limits.get("max_context_tokens", 6000)):
+        envelope = SubagentResultEnvelope(
+            ticket_id=ticket.ticket_id,
+            agent=agent,
+            status="blocked",
+            summary=f"{agent} invocation blocked by context cap.",
+            metrics={"context_tokens_est": context_tokens},
+            stop_reason="context_cap_exceeded",
+            next_action="Reduce evidence pack or history tail.",
+        )
+        return envelope.model_dump()
+    if ticket.depth > int(runtime_limits.get("max_delegate_depth", 3)):
+        envelope = SubagentResultEnvelope(
+            ticket_id=ticket.ticket_id,
+            agent=agent,
+            status="blocked",
+            summary=f"{agent} invocation blocked by delegation depth cap.",
+            metrics={"depth": ticket.depth},
+            stop_reason="delegate_depth_exceeded",
+            next_action="Return to the supervisor with current evidence.",
+        )
+        return envelope.model_dump()
+
+    rl = get_run_logger()
+    task_id = rl.new_task(by=ticket.from_agent, to=agent, instruction=task_text, parent_task_id=ticket.parent_ticket_id)
+    os.environ["TASK_ID"] = task_id
+    try:
+        with rl.agent_node(agent=agent, task_id=task_id):
+            out_state = _invoke_stage1(
+                agent,
+                [HumanMessage(content=f"[Instructions]\n{intro_note}")],
+                injected_tools or [],
+                state,
+                ticket=ticket,
+                context_pack=context_pack,
+            )
+        rl.close_task(task_id, status="done")
+    except Exception as e:
+        rl.close_task(task_id, status="failed")
+        rl.error_event(agent=agent, kind="subgraph_error", message=str(e), task_id=task_id, recovered=False, exc=e)
+        raise
+
+    if out_state.get("tool_events"):
+        state.setdefault("tool_events", []).extend(out_state["tool_events"])
+    if out_state.get("metrics"):
+        _merge_metrics(state.setdefault("metrics", {}), out_state.get("metrics", {}))
+
+    validator = _validator_for(agent)
+    validation = validator(out_state, topic_id=ticket.topic_id)
+    metrics = dict(out_state.get("metrics", {}) or {})
+    metrics["context_tokens_est"] = context_tokens
+    metrics["handoff_validation"] = validation.status
+    metrics["handoff_reason"] = validation.reason
+    if validation.status != "ready":
+        state.setdefault("metrics", {})["handoff_validator_failures"] = (
+            state.setdefault("metrics", {}).get("handoff_validator_failures", 0) + 1
+        )
+    envelope = SubagentResultEnvelope(
+        ticket_id=ticket.ticket_id,
+        agent=agent,
+        status="ok" if validation.status == "ready" else validation.status,
+        summary=_summarize_out(agent, out_state, max_items=4),
+        artifacts=validation.artifacts,
+        delegate_requests=[
+            DelegateRequest.model_validate(req) for req in (out_state.get("delegate_requests") or [])
+        ],
+        evidence_used=[str(h.get("doc_id") or h.get("claim") or "") for h in (out_state.get("hits") or [])[:6]],
+        metrics=metrics,
+        stop_reason="" if validation.status == "ready" else f"handoff_{validation.status}",
+        next_action=validation.reason,
+    )
+    state.setdefault("handoff_status", {})[ticket.ticket_id] = validation.model_dump()
+    _record_runtime_event(
+        state,
+        ticket_id=ticket.ticket_id,
+        agent=agent,
+        event="subgraph_complete",
+        status=envelope.status,
+        stop_reason=envelope.stop_reason,
+    )
+    payload = envelope.model_dump()
+    payload["tool_events"] = out_state.get("tool_events", [])
+    payload["hits"] = out_state.get("hits", [])
+    payload["raw_messages"] = out_state.get("messages", [])
+    payload["topic_id"] = ticket.topic_id
+    payload["owner"] = ticket.owner
+    return payload
+
+
+def delegate_to_me(
+    question: str,
+    state: Dict[str, Any],
+    topic_id: Optional[str] = None,
+    owner: Optional[str] = None,
+    success_criteria: Optional[str] = None,
+) -> Dict[str, Any]:
+    intro = "You are the Machine Expert. Use your RAG and blackboard tools to answer the question."
+    p2p_tools, p2p_box = make_blackboard_tools(state, agent_name="ME")
+    with _TopicCtx(state, topic_id, owner):
+        rag_note = ""
+        try:
+            import me_tools
+            me_tools.init_me_index_from_dir(state.get("pdf_dir", "./TEP_docs"))
+        except Exception as e:
+            rag_note = (
+                f"\n\n[System] RAG document index unavailable ({type(e).__name__})."
+                " Use kg_query_fault(N) as primary knowledge source."
+            )
+        ticket = _build_ticket_for_agent(
+            from_agent=str((state.get("current_agent") or "Supervisor")),
+            to_agent="ME",
+            state=state,
+            task_text=question + rag_note,
+            success_criteria=success_criteria,
+            topic_id=topic_id,
+            owner=owner,
+            inputs={"question": question},
+        )
+        result = _run_subgraph(
+            "ME",
+            state,
+            question + rag_note,
+            intro,
+            topic_id=_topic_from(state, topic_id),
+            owner=_owner_from(state, owner),
+            injected_tools=p2p_tools,
+            success_criteria=success_criteria,
+            ticket=ticket,
+        )
+        _extract_and_write_me_fault_facts({"messages": result.get("raw_messages", [])})
+        if p2p_box:
+            result["delegate_requests"] = list(p2p_box)
+        return result
+
+
+def delegate_to_de(
+    task: str,
+    state: Dict[str, Any],
+    topic_id: Optional[str] = None,
+    owner: Optional[str] = None,
+    success_criteria: Optional[str] = None,
+) -> Dict[str, Any]:
+    intro = "You are the Data Engineer. Use your SQL and blackboard tools to fulfill the data request."
+    p2p_tools, p2p_box = make_blackboard_tools(state, agent_name="DE")
+    with _TopicCtx(state, topic_id, owner):
+        me_facts = _read_me_fault_facts(state)
+        task_text = f"[Context from ME]\n{me_facts}\n\n{task}" if me_facts else task
+        ticket = _build_ticket_for_agent(
+            from_agent=str((state.get("current_agent") or "Supervisor")),
+            to_agent="DE",
+            state=state,
+            task_text=task_text,
+            success_criteria=success_criteria,
+            topic_id=topic_id,
+            owner=owner,
+            inputs={"task": task},
+        )
+        result = _run_subgraph(
+            "DE",
+            state,
+            task_text,
+            intro,
+            topic_id=_topic_from(state, topic_id),
+            owner=_owner_from(state, owner),
+            injected_tools=p2p_tools,
+            success_criteria=success_criteria,
+            ticket=ticket,
+        )
+        if p2p_box:
+            result["delegate_requests"] = list(p2p_box)
+        return result
+
+
+def delegate_to_ds(
+    task: str,
+    state: Dict[str, Any],
+    topic_id: Optional[str] = None,
+    owner: Optional[str] = None,
+    success_criteria: Optional[str] = None,
+) -> Dict[str, Any]:
+    intro = "You are the Data Scientist. Use your Python and blackboard tools to analyze data or fulfill the request."
+    p2p_tools, p2p_box = make_blackboard_tools(state, agent_name="DS")
+    with _TopicCtx(state, topic_id, owner):
+        ticket = _build_ticket_for_agent(
+            from_agent=str((state.get("current_agent") or "Supervisor")),
+            to_agent="DS",
+            state=state,
+            task_text=task,
+            success_criteria=success_criteria,
+            topic_id=topic_id,
+            owner=owner,
+            inputs={"task": task},
+        )
+        result = _run_subgraph(
+            "DS",
+            state,
+            task,
+            intro,
+            topic_id=_topic_from(state, topic_id),
+            owner=_owner_from(state, owner),
+            injected_tools=p2p_tools,
+            success_criteria=success_criteria,
+            ticket=ticket,
+        )
         if p2p_box:
             result["delegate_requests"] = list(p2p_box)
         return result

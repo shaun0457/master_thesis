@@ -18,6 +18,13 @@ except Exception:
     _ensure_run_id_state = None
 from run_logger import emit_event, _now_ms, new_uuid
 import traceback
+from subagent_contracts import (
+    DelegateRequest,
+    SubagentResultEnvelope,
+    build_ticket,
+    normalize_delegate_request,
+    ticket_signature,
+)
 
 
 # _MAX_P2P_HOPS = 8
@@ -378,6 +385,33 @@ def ensure_topic_in_args(args: Dict[str, Any], target_agent: str, state: Optiona
             pass
 
     return out
+
+
+def _active_ticket(state: Dict[str, Any]) -> Dict[str, Any]:
+    return (state or {}).get("active_ticket") or {}
+
+
+def _normalize_delegate_payload(name: str, args: Dict[str, Any], state: Dict[str, Any]) -> Dict[str, Any]:
+    target = {"delegate_to_me": "ME", "delegate_to_de": "DE", "delegate_to_ds": "DS"}[name]
+    args = ensure_topic_in_args(args, target_agent=target, state=state)
+    parent = _active_ticket(state)
+    payload_text = args.get("question", "") if target == "ME" else args.get("task", "")
+    ticket = build_ticket(
+        from_agent=str(state.get("current_agent") or "Supervisor"),
+        to_agent=target,
+        topic_id=str(args.get("topic_id") or ""),
+        owner=str(args.get("owner") or target),
+        goal=payload_text,
+        task_text=payload_text,
+        success_criteria=str(args.get("success_criteria") or ""),
+        inputs=dict(args),
+        parent_ticket_id=parent.get("ticket_id"),
+        depth=int(parent.get("depth", -1)) + 1,
+    )
+    state["active_ticket"] = ticket.model_dump()
+    state.setdefault("ticket_ledger", []).append(ticket.model_dump())
+    args["ticket"] = ticket
+    return args
 
 
 def _exec_one_tool(name: str, args: Dict[str, Any], state: Dict[str, Any]) -> Dict[str, Any]:
@@ -895,3 +929,171 @@ def route_and_execute(state: Dict[str, Any]) -> Dict[str, Any]:
     state.setdefault("metrics", {}).setdefault("p2p_hops", 0)
     state["metrics"]["p2p_hops"] += total_p2p_hops
     return {"messages": outputs, "metrics": state["metrics"], "violations": state.get("violations", [])}
+
+
+def _consume_p2p_requests(res: Dict[str, Any], state: Dict[str, Any]) -> None:
+    try:
+        reqs: List[Dict[str, Any]] = (res or {}).get("delegate_requests") or []
+        if not reqs:
+            return
+        caller = (res or {}).get("agent") or state.get("current_agent") or "Supervisor"
+        seen = state.setdefault("_delegate_signatures", set())
+        for raw_req in reqs:
+            try:
+                req = normalize_delegate_request(
+                    raw_req,
+                    from_agent=caller,
+                    topic_id=str(raw_req.get("topic_id") or (state.get("topic_ctx") or {}).get("topic_id") or state.get("topic_id") or ""),
+                    owner=str(raw_req.get("owner") or (state.get("topic_ctx") or {}).get("owner") or state.get("owner") or caller),
+                    parent_ticket_id=raw_req.get("parent_ticket_id") or _active_ticket(state).get("ticket_id"),
+                    depth=int(raw_req.get("depth", _active_ticket(state).get("depth", 0))),
+                )
+            except Exception:
+                continue
+            if req.depth > int((state.get("runtime_limits") or {}).get("max_delegate_depth", _MAX_P2P_HOPS)):
+                state.setdefault("runtime_events", []).append(
+                    {"event": "delegate_blocked", "reason": "delegate_depth_exceeded", "ticket_id": req.ticket_id}
+                )
+                continue
+            sig = ticket_signature(
+                build_ticket(
+                    from_agent=req.from_agent,
+                    to_agent=req.to_agent,
+                    topic_id=req.topic_id,
+                    owner=req.owner,
+                    goal=req.goal,
+                    task_text=req.task_text,
+                    success_criteria=req.success_criteria,
+                    inputs={"required_inputs": req.required_inputs},
+                    parent_ticket_id=req.parent_ticket_id,
+                    depth=req.depth,
+                    ticket_id=req.ticket_id,
+                )
+            )
+            if sig in seen:
+                continue
+            seen.add(sig)
+            sub_name = {"ME": "delegate_to_me", "DE": "delegate_to_de", "DS": "delegate_to_ds"}[req.to_agent]
+            base_args = {"question": req.task_text} if req.to_agent == "ME" else {"task": req.task_text}
+            base_args.update({"success_criteria": req.success_criteria, "topic_id": req.topic_id, "owner": req.owner})
+            with _metrics_lock:
+                current = state.get("metrics", {}).get("global_tool_calls", 0)
+                if current >= MAX_GLOBAL_TOOL_CALLS:
+                    break
+                state.setdefault("metrics", {})["global_tool_calls"] = current + 1
+            _ = _exec_one_tool(sub_name, base_args, state)
+            emit_delegate_event(
+                caller_agent=caller,
+                target_agent=req.to_agent,
+                topic_id=req.topic_id,
+                reason=req.task_text,
+                turn_index=state.get("turn_counter"),
+                state=state,
+            )
+    except Exception:
+        traceback.print_exc()
+
+
+def _exec_one_tool(name: str, args: Dict[str, Any], state: Dict[str, Any]) -> Dict[str, Any]:
+    t0_ms = int(time.time() * 1000)
+    if name.startswith("delegate_to_"):
+        args = _normalize_delegate_payload(name, args, state)
+    try:
+        if name == "delegate_to_me":
+            if args.get("pdf_dir"):
+                state["pdf_dir"] = args["pdf_dir"]
+            result = delegate_to_me(
+                question=args.get("question", ""),
+                state=state,
+                topic_id=args.get("topic_id"),
+                owner=args.get("owner"),
+                success_criteria=args.get("success_criteria"),
+            )
+            target = "ME"
+        elif name == "delegate_to_de":
+            result = delegate_to_de(
+                task=args.get("task", ""),
+                state=state,
+                topic_id=args.get("topic_id"),
+                owner=args.get("owner"),
+                success_criteria=args.get("success_criteria"),
+            )
+            target = "DE"
+        elif name == "delegate_to_ds":
+            result = delegate_to_ds(
+                task=args.get("task", ""),
+                state=state,
+                topic_id=args.get("topic_id"),
+                owner=args.get("owner"),
+                success_criteria=args.get("success_criteria"),
+            )
+            target = "DS"
+        else:
+            result = {"status": "error", "message": f"unknown tool {name}"}
+            target = ""
+
+        note_tool_event(
+            state,
+            tool_name=name,
+            args={k: v for k, v in args.items() if k != "ticket"},
+            started_ms=t0_ms,
+            latency_ms=int(time.time() * 1000) - t0_ms,
+            raw_output=json.dumps(_json_safe(result), ensure_ascii=False)[:500],
+        )
+        if target:
+            emit_delegate_event(
+                caller_agent=state.get("current_agent", "Supervisor"),
+                target_agent=target,
+                topic_id=str(result.get("topic_id") or args.get("topic_id") or ""),
+                reason=str(args.get("task") or args.get("question") or ""),
+                turn_index=state.get("turn_counter"),
+                state=state,
+            )
+        return result
+    except Exception as e:
+        note_tool_event(
+            state,
+            tool_name=name,
+            args={k: v for k, v in args.items() if k != "ticket"},
+            started_ms=t0_ms,
+            latency_ms=int(time.time() * 1000) - t0_ms,
+            raw_output=f"ERROR: {type(e).__name__}: {str(e)}",
+        )
+        raise
+
+
+def route_and_execute(state: Dict[str, Any]) -> Dict[str, Any]:
+    msgs = state.get("messages", [])
+    last = msgs[-1] if msgs else None
+    if not isinstance(last, AIMessage) or not last.tool_calls:
+        return {}
+
+    state.setdefault("metrics", {}).setdefault("global_tool_calls", 0)
+    outputs: List[ToolMessage] = []
+    for call in last.tool_calls:
+        with _metrics_lock:
+            if state["metrics"]["global_tool_calls"] >= MAX_GLOBAL_TOOL_CALLS:
+                break
+            state["metrics"]["global_tool_calls"] += 1
+        res = _exec_one_tool(call.get("name"), call.get("args") or {}, state)
+        _consume_p2p_requests(res, state)
+        envelope = SubagentResultEnvelope(
+            ticket_id=str(res.get("ticket_id") or _active_ticket(state).get("ticket_id") or ""),
+            agent=str(res.get("agent") or "Supervisor"),
+            status=str(res.get("status") or "ok"),
+            summary=_trim(str(res.get("summary") or ""), MAX_SUMMARY_CHARS),
+            delegate_requests=[DelegateRequest.model_validate(r) for r in (res.get("delegate_requests") or [])],
+            evidence_used=list(res.get("evidence_used") or []),
+            metrics=dict(res.get("metrics") or {}),
+            stop_reason=str(res.get("stop_reason") or ""),
+            next_action=str(res.get("next_action") or ""),
+            artifacts=list(res.get("artifacts") or []),
+        )
+        outputs.append(
+            ToolMessage(
+                name=call.get("name"),
+                tool_call_id=call.get("id", "call"),
+                content=envelope.model_dump_json(),
+            )
+        )
+    return {"messages": outputs, "metrics": state.get("metrics", {}), "violations": state.get("violations", [])}
