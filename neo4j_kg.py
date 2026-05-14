@@ -100,3 +100,69 @@ def query_fault_kg(fault_id: int) -> dict[str, Any]:
         logger.warning("Neo4j query failed for IDV_%d (%s), using local fallback", fault_id, exc)
         return {**local, "source": "tep_knowledge (local fallback)",
                 "evidence": [], "context_chunks": [], "summary_md": ""}
+
+
+_MATCH_FAULT_BY_SENSORS_QUERY = (
+    "MATCH (s:Sensor) WHERE s.name IN $sensors "
+    "MATCH (f:Fault)-[:HAS_SENSOR]->(s) "
+    "WITH f, count(s) AS hits, collect(s.name) AS matched "
+    "RETURN f.idv_number AS fault_id, f.description AS description, "
+    "       hits, matched "
+    "ORDER BY hits DESC LIMIT $top_k"
+)
+
+
+def match_fault_by_sensors(sensors: list[str], top_k: int = 3) -> list[dict]:
+    """Reverse-lookup candidate faults from observed deviant sensors.
+
+    Neo4j-primary with local fallback. Mirrors the pattern of query_fault_kg.
+
+    Args:
+        sensors: Sensor column names (e.g. ["xmeas_9", "xmv_6"]).
+        top_k: Maximum number of candidates.
+
+    Returns:
+        List of {"fault_id", "fault_name", "description", "score", "matched", "source"}
+        sorted by score descending. Empty list on empty input.
+    """
+    from tep_knowledge import match_fault_by_sensors_local
+
+    if not sensors:
+        return []
+
+    # Local Jaccard is always computed (used for score even when Neo4j wins)
+    local = match_fault_by_sensors_local(sensors, top_k=top_k)
+
+    try:
+        driver = _get_kg_driver()
+        with driver.session() as session:
+            records = list(session.run(
+                _MATCH_FAULT_BY_SENSORS_QUERY,
+                sensors=list(sensors),
+                top_k=int(top_k),
+            ))
+        if not records:
+            logger.debug("Neo4j: no HAS_SENSOR matches for %s, using local fallback", sensors)
+            return [{**r, "source": "tep_knowledge (local fallback)"} for r in local]
+
+        query_set = set(sensors)
+        out: list[dict] = []
+        for rec in records:
+            matched = list(rec["matched"] or [])
+            # score: jaccard between input sensors and matched
+            union_size = len(query_set | set(matched))
+            score = round(len(matched) / union_size, 4) if union_size else 0.0
+            fid = int(rec["fault_id"]) if rec["fault_id"] is not None else -1
+            out.append({
+                "fault_id": fid,
+                "fault_name": f"IDV_{fid}",
+                "description": rec["description"] or "",
+                "score": score,
+                "matched": sorted(matched),
+                "source": "Neo4j KG",
+            })
+        return out
+
+    except Exception as exc:
+        logger.warning("Neo4j match_fault_by_sensors failed (%s), using local fallback", exc)
+        return [{**r, "source": "tep_knowledge (local fallback)"} for r in local]

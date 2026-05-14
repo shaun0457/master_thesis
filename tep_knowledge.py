@@ -101,3 +101,44 @@ def lookup_fault(fault_id: int) -> dict:
         "diagnostic_sensors": sensor_details,
         "source": "TEP knowledge base (Downs & Vogel 1993)",
     }
+
+
+def match_fault_by_sensors_local(sensors: list[str], top_k: int = 3) -> list[dict]:
+    """Reverse-lookup candidate faults from a list of deviant sensor names.
+
+    Scores each fault by Jaccard overlap between the input sensors and the fault's
+    known diagnostic sensors. Returns top_k candidates sorted by score (descending),
+    breaking ties on smaller fault_id.
+
+    Args:
+        sensors: Sensor column names (e.g. ["xmeas_9", "xmv_6"]).
+        top_k: Maximum number of candidates to return.
+
+    Returns:
+        List of {"fault_id", "fault_name", "description", "score", "matched"} dicts.
+        Empty list if input is empty.
+    """
+    if not sensors:
+        return []
+
+    query = set(sensors)
+    scored: list[dict] = []
+    for fid, fsensors in FAULT_SENSORS.items():
+        ref = set(fsensors)
+        union = query | ref
+        if not union:
+            continue
+        matched = sorted(query & ref)
+        if not matched:
+            continue
+        score = len(matched) / len(union)
+        scored.append({
+            "fault_id": fid,
+            "fault_name": f"IDV_{fid}",
+            "description": FAULT_DESCRIPTIONS.get(fid, ""),
+            "score": round(score, 4),
+            "matched": matched,
+        })
+
+    scored.sort(key=lambda r: (-r["score"], r["fault_id"]))
+    return scored[:top_k]

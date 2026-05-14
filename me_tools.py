@@ -478,10 +478,30 @@ def kg_query_fault(fault_id: int) -> str:
     return json.dumps(result, ensure_ascii=False)
 
 
+@tool("kg_match_fault_by_sensors")
+def kg_match_fault_by_sensors(sensors: list[str], top_k: int = 3) -> str:
+    """Reverse-lookup: given a list of deviant sensor names, return candidate faults.
+
+    Use this when DS reports the top deviant sensors from an unlabeled observation
+    and you need to identify which TEP fault matches that sensor pattern.
+
+    Args:
+        sensors: List of sensor column names (e.g. ["xmeas_9", "xmeas_7", "xmv_6"]).
+        top_k: Maximum candidates to return (default 3).
+
+    Returns:
+        JSON list of candidate faults sorted by Jaccard score, each with
+        fault_id, fault_name, description, score, matched, source.
+    """
+    from neo4j_kg import match_fault_by_sensors
+    result = match_fault_by_sensors(sensors or [], top_k=int(top_k))
+    return json.dumps(result, ensure_ascii=False)
+
+
 def get_me_tools(mode: str):
 
     tools = [initial_search, read_document_chunk, synthesize_and_cite,
-             me_warmup_read, me_write_fact, kg_query_fault]
+             me_warmup_read, me_write_fact, kg_query_fault, kg_match_fault_by_sensors]
 
     # 保險檢查：每個工具都應該是 LangChain Tool 物件（具有 .name）
     assert all(hasattr(t, "name") for t in tools), "Some ME tools are not LangChain Tool objects."
