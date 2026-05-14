@@ -17,57 +17,31 @@ Do not use it for long-term architecture explanation. That belongs in:
 
 - [CODEx_MEMORY.md](./CODEx_MEMORY.md)
 - [WORKSPACE_INDEX.md](./WORKSPACE_INDEX.md)
+- [AGENTS.md](./AGENTS.md)
 
 ## Current Status
 
-- The bootstrap set has been promoted into the repo root on 2026-05-14.
-- `AGENTS.md`, `SESSION_START.md`, `WORKSPACE_INDEX.md`, `CODEx_MEMORY.md`, and `SESSION_PROGRESS.md` are now the authoritative session files.
-- `CLAUDE.md` has been reduced to a wrapper around `AGENTS.md`.
-- `PLAN.md` and `PROGRESS.md` have been reduced to legacy archive documents to avoid conflicting with the bootstrap flow.
-- The latest recorded regression baseline from the legacy progress log is `pytest tests/ -q -> 85 passed` on 2026-05-13.
-- The latest recorded live evaluation baseline from the legacy progress log is `9/9 PASS` on 2026-05-13.
+- Regression baseline: `pytest tests/ -q → 85 passed` (2026-05-14, commit b2af005)
+- Live evaluation baseline: `9/9 PASS` (2026-05-13)
+- 4 CODEX_REVIEW findings resolved and committed (see below)
 
 ## Current Phase
 
-Phase: post-bootstrap normalization
+Phase: production hardening — CODEX_REVIEW fixes complete
 
-## Completed Recently
+## Completed Recently (2026-05-14)
 
-- Ran a bootstrap audit and generated non-destructive refresh proposals.
-- Promoted the bootstrap file set from `.bootstrap_refresh/` into the repo root.
-- Consolidated overlapping session guidance across `CLAUDE.md`, `PLAN.md`, and `PROGRESS.md`.
-- Created a pre-migration rollback snapshot commit before promoting the new root files.
+- **bb_tools.py**: renamed Python helper to `_write_to_blackboard_impl`；消除 @tool 同名覆蓋導致的遞迴失敗
+- **de_tools.py**: 查詢無 LIMIT 時自動注入 `LIMIT {DE_MAX_ROWS}`（預設 10000）；更新 import
+- **router.py**: `_consume_p2p_requests` 子委派前加 `_metrics_lock` 節流計數，關閉 P2P 繞過漏洞
+- **tests/conftest.py**: 硬編碼路徑換成 `tmp_path_factory.mktemp()`，CI 可攜
+- 封存舊 MD 文件、舊 prompt cards、舊 PNG plots（commit 1217510）
 
 ## Current Working Assumptions
 
-- New sessions should start from `SESSION_START.md`, not from the legacy handoff files.
-- The repo is still actively evolving around eval reliability, regression gating, and TEP fault-analysis workflows.
-- The old detailed milestone history remains available in git history if the compact archive files are not sufficient.
+- 無已知阻斷問題；下一輪優先從 eval / 論文寫作方向選
+- `archive/` 僅供歷史參考，不影響 bootstrap
 
 ## Next Recommended Step
 
-Current next action:
-
-1. Resume normal repo work using `SESSION_START.md` and keep future live status updates only in `SESSION_PROGRESS.md`.
-
-## Open Tasks
-
-- Decide later whether `PLAN.md` and `PROGRESS.md` should remain as lightweight archive stubs or be removed entirely.
-- If another active engineering track becomes the main focus, rewrite this file to reflect that work instead of adding status elsewhere.
-
-## Update Rules
-
-Update this file when:
-
-- the next practical step changes
-- the phase changes
-- a blocker changes what the next session should do
-- a major assumption is added or removed
-
-Keep updates short and operational.
-
-## Session Discipline
-
-- `SESSION_START.md` is the only startup entry.
-- `SESSION_PROGRESS.md` is the single source of truth for current status and next action.
-- At the end of every substantial work block, update this file before ending the turn when the working state changed.
+1. 決定下一個工作軌道：(a) eval 深化、(b) 論文分析、(c) 繼續 production hardening
