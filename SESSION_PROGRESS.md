@@ -21,14 +21,14 @@ Do not use it for long-term architecture explanation. That belongs in:
 
 ## Current Status
 
-- Regression baseline: `pytest tests/ -q → 93 passed` (2026-05-14, commit f2e8384)
+- Regression baseline: `pytest tests/ -q → 111 passed` (2026-05-14, after Phase 3.5)
 - Live evaluation baseline: `9/9 PASS` (2026-05-13)
 - 執行中工作軌：**Production-Ready Fault Diagnosis Pipeline**（Plan: `C:\Users\chengting\.claude\plans\jolly-plotting-spring.md`）
-- 已完成 Phase 1, Phase 2（共 6 個 phase）
+- 已完成 Phase 1, 2, 3, 3.5（共 6 個 phase）；**準備進入 Phase 4 前等待 user 確認**
 
 ## Current Phase
 
-Phase: production diagnosis pipeline — **Phase 3 進行中** (FastAPI server + diagnose_flow)
+Phase: production diagnosis pipeline — **Phase 4 待啟動** (Supervisor prompt + monitoring dashboard)
 
 ## Completed Recently (2026-05-14)
 
@@ -43,6 +43,17 @@ Phase: production diagnosis pipeline — **Phase 3 進行中** (FastAPI server +
 - `neo4j_kg.match_fault_by_sensors()`：Neo4j primary + local fallback（同 query_fault_kg 模式）
 - `me_tools.kg_match_fault_by_sensors`：新 @tool 註冊到 ME tool set
 - 8 個單元測試（local + Neo4j success + Neo4j failure fallback + empty records + ME wrapper）
+
+### Diagnosis Pipeline — Phase 3（commit 46e6fd3）
+- `diagnose_flow.py`：orchestrator wrap graph.invoke；register obs + baseline 到 blackboard；regex 解析 fault_id；持久化到 live_observations.db
+- `api_server.py`：FastAPI（`/diagnose`, `/observations`, `/diagnoses`, `/admin/baseline`, `/health`）
+- `requirements.txt`：加 fastapi, uvicorn[standard], httpx
+- 12 個新測試（fault_id parsing, graph success/error path, all endpoints）
+
+### Diagnosis Pipeline — Phase 3.5
+- `stream_simulator.py`：synthetic SCADA feed，支援 `--pattern "normal:60,fault4:30"` 排程注入
+- `file_watcher.py`：監看 inbox/ 自動 POST /diagnose
+- 6 個新測試（pattern parsing, row stripping, posting, run_once flow）
 
 ### 早先（commit b2af005）— CODEX_REVIEW 4 個修補
 - `bb_tools.py` 同名覆蓋、`de_tools.py` SQL LIMIT、`router.py` P2P 節流、`tests/conftest.py` 硬編碼路徑
