@@ -1,61 +1,70 @@
-# ds_tools.py (最终修正版 - 使用自定义工具)
+# ds_tools.py
 from typing import List, Optional
 from langchain_core.tools import tool
-from bb_tools import bb_list_datasets, bb_get_latest_dataset, bb_preview_dataset, bb_list_datasets_py
+from bb_tools import (
+    bb_find_dataset_py,
+    bb_get_latest_dataset,
+    bb_list_datasets,
+    bb_list_datasets_py,
+    bb_preview_dataset,
+)
 from run_logger import get_run_logger
-import os, json
+import os
+import json
+
 
 def _resolve_path(it: dict) -> Optional[str]:
-    # 1) 優先用 datasets 的 ref（字串路徑）
     ref = it.get("ref")
     if isinstance(ref, str) and os.path.exists(ref):
         return ref
-    # 2) 退而求其次：artifacts 鏡射的 uri（字串）
+
     uri = it.get("uri")
     if isinstance(uri, str) and os.path.exists(uri):
         return uri
-    # 3) 歷史相容：有些舊資料把 uri 存成 dict
+
     if isinstance(uri, dict):
         p = uri.get("path")
         if isinstance(p, str) and os.path.exists(p):
             return p
     return None
 
+
 @tool
 def ds_pick_dataset_path(prefer_topic: str = "") -> str:
     """
-    根據目前 RUN_ID 的 blackboard，挑一個可讀取的 dataset 檔案路徑（字串）。
-    - 若提供 prefer_topic，先找 topic_id 相符者；否則回退到最後一筆可讀路徑。
-    回傳 JSON: {"status":"ok","path":"..."} 或 {"status":"empty"}。
+    Return the best available dataset path from the canonical blackboard registry.
+
+    `prefer_topic` is kept for backward compatibility, but matching now prefers
+    dataset identity (`name` / aliases) before workflow topic.
     """
-    rl = get_run_logger()
+    get_run_logger()
     run_id = os.getenv("RUN_ID", "default")
     items = bb_list_datasets_py(run_id)
 
-    # 1) 先依 topic 過濾（若有）
-    if prefer_topic:
-        for it in reversed(items):
-            if it.get("topic_id") == prefer_topic:
-                p = _resolve_path(it)
-                if p:
-                    return json.dumps({"status":"ok","path": p}, ensure_ascii=False)
+    match = bb_find_dataset_py(run_id, prefer_name=prefer_topic, prefer_topic=prefer_topic)
+    if match:
+        p = _resolve_path(match)
+        if p:
+            return json.dumps({"status": "ok", "path": p}, ensure_ascii=False)
 
-    # 2) 回退：從最後一筆往前找第一個可讀路徑
     for it in reversed(items):
         p = _resolve_path(it)
         if p:
-            return json.dumps({"status":"ok","path": p}, ensure_ascii=False)
+            return json.dumps({"status": "ok", "path": p}, ensure_ascii=False)
 
-    return json.dumps({"status":"empty"}, ensure_ascii=False)
+    return json.dumps({"status": "empty"}, ensure_ascii=False)
+
 
 def _execute_python_subprocess(code: str, timeout: int = 30) -> dict:
     """Run code in a subprocess for isolation and timeout safety."""
     import subprocess
     import tempfile
     import sys as _sys
+
     def _looks_secret(key: str) -> bool:
         upper_key = str(key or "").upper()
         return any(token in upper_key for token in ("TOKEN", "KEY", "SECRET", "PASSWORD", "CREDENTIAL"))
+
     clean_env = {}
     for key in ("PATH", "PYTHONPATH", "TMPDIR"):
         value = os.environ.get(key)
@@ -63,9 +72,11 @@ def _execute_python_subprocess(code: str, timeout: int = 30) -> dict:
             clean_env[key] = value
     clean_env["PATH"] = os.environ.get("PATH") or os.environ.get("Path", "")
     clean_env["PYTHONPATH"] = os.getcwd()
+
     with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False, encoding="utf-8") as f:
         f.write(code)
         tmp_path = f.name
+
     try:
         result = subprocess.run(
             [_sys.executable, tmp_path],
@@ -88,9 +99,7 @@ def _execute_python_subprocess(code: str, timeout: int = 30) -> dict:
 
 @tool
 def execute_python_code(code: str) -> str:
-    """
-    Execute Python code in an isolated subprocess sandbox and return text result.
-    """
+    """Execute Python code in an isolated subprocess sandbox and return text result."""
     rl = get_run_logger()
     task_id = os.getenv("TASK_ID")
     try:
@@ -104,6 +113,7 @@ def execute_python_code(code: str) -> str:
         with rl.tool_exec(agent="DS", tool="execute_python_code", task_id=task_id, args={"err": str(e)}) as t:
             t.ok(False)
         return json.dumps({"error": f"{type(e).__name__}: {e}"}, ensure_ascii=False)
+
 
 def get_ds_tools(mode: str = "augmented") -> (list, dict):
     tools = [execute_python_code, bb_list_datasets, bb_get_latest_dataset, bb_preview_dataset, ds_pick_dataset_path]

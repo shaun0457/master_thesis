@@ -2,7 +2,7 @@
 import re, uuid, time
 from sqlalchemy import create_engine, text, inspect
 from langchain.tools import tool
-from bb_tools import bb_register_dataset
+from bb_tools import bb_register_dataset, bb_register_dataset_path
 import os, json, pandas as pd
 from typing import Dict, Any, List, Optional
 from run_logger import get_run_logger
@@ -359,6 +359,41 @@ def _auto_publish_dataset(df, state: Dict[str, Any], *, agent: str = "DE", name_
         return {}
 
 
+def _auto_publish_dataset(df, state: Dict[str, Any], *, agent: str = "DE", name_prefix: str = "de_autosample") -> Dict[str, Any]:
+    """Persist a generated DataFrame through the canonical blackboard registry."""
+    try:
+        run_id = state.get("run_id") or os.getenv("RUN_ID") or time.strftime("%Y%m%d_%H%M%S")
+        folder = os.path.join("datasets", run_id)
+        os.makedirs(folder, exist_ok=True)
+
+        fname = f"{name_prefix}_{uuid.uuid4().hex[:6]}.parquet"
+        ref = os.path.join(folder, fname).replace("\\", "/")
+        df.to_parquet(ref, index=False)
+
+        dataset_name = os.path.splitext(os.path.basename(ref))[0]
+        topic_id = ((state.get("topic_ctx") or {}).get("topic_id") or state.get("topic_id") or "")
+        return bb_register_dataset_path(
+            run_id=run_id,
+            name=dataset_name,
+            path=ref,
+            fmt="parquet",
+            rows=int(getattr(df, "shape", [0, 0])[0]),
+            columns=list(getattr(df, "columns", [])),
+            meta={
+                "source": "sql_db_query",
+                "sampled": True,
+                "kind": "sql_result",
+                "role": "intermediate",
+                "intended_owner": "DS",
+            },
+            topic_id=topic_id,
+            created_by=agent,
+            state=state,
+        ).get("dataset", {})
+    except Exception:
+        return {}
+
+
 @tool
 def deliver_dataframe(df_json: str) -> str:
     """Deliver a DataFrame-like JSON as dataset and return a reference path."""
@@ -427,6 +462,4 @@ def get_de_tools(mode: str):
     ])
     tool_map = {t.name: t for t in tools}
     return tools, tool_map
-
-
 

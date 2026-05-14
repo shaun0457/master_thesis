@@ -16,7 +16,7 @@ def now_ms() -> int:
 
 def _root() -> str:
     """Blackboard 根目錄，可用環境變數 RUNS_DIR 覆寫。"""
-    root = os.environ.get("RUNS_DIR", "/mnt/data/runs")
+    root = os.environ.get("RUNS_DIR") or os.path.join(os.getcwd(), "runs")
     os.makedirs(root, exist_ok=True)
     return root
 
@@ -38,6 +38,41 @@ def _ensure_structure(reg: Dict[str, Any]) -> Dict[str, Any]:
     reg.setdefault("open_issues", [])
     reg.setdefault("artifacts", [])   # 扁平索引（各 section 的摘要）
     return reg
+
+
+def _normalize_dataset_item(item: Dict[str, Any]) -> Dict[str, Any]:
+    """Return a canonical dataset record shape for all readers."""
+    out = dict(item or {})
+    meta = dict(out.get("meta") or {})
+
+    name = str(out.get("name") or meta.get("dataset_name") or meta.get("name") or "")
+    workflow_topic = str(
+        out.get("topic_id") or meta.get("workflow_topic") or meta.get("source_topic") or ""
+    )
+    kind = str(out.get("kind") or meta.get("kind") or meta.get("dataset_kind") or "")
+    role = str(out.get("role") or meta.get("role") or meta.get("dataset_role") or "")
+
+    aliases: List[str] = []
+    for raw in (
+        meta.get("aliases"),
+        meta.get("dataset_aliases"),
+        out.get("aliases"),
+        [name, workflow_topic],
+    ):
+        if isinstance(raw, str):
+            aliases.append(raw)
+        elif isinstance(raw, (list, tuple, set)):
+            aliases.extend(str(x) for x in raw if x)
+    aliases = [a.strip() for a in aliases if isinstance(a, str) and a.strip()]
+    aliases = list(dict.fromkeys(aliases))
+
+    out["name"] = name
+    out["topic_id"] = workflow_topic
+    out["kind"] = kind
+    out["role"] = role
+    out["aliases"] = aliases
+    out["dataset_id"] = out.get("dataset_id") or out.get("id")
+    return out
 
 def _load(run_id: Optional[str] = None) -> Dict[str, Any]:
     p = _bb_path(run_id)
@@ -174,6 +209,7 @@ def bb_write(*, run_id: Optional[str],
     except Exception:
         pass
 
+    sync_blackboard_state(state, rid)
     return {"status": "ok", "artifact_id": artifact_id, "topic_id": topic_id, "section": section, "uri": rec["uri"]}
 
 # def bb_read(*, run_id: Optional[str],
@@ -336,11 +372,13 @@ def bb_register_dataset_path(
     fmt_inferred = "parquet" if ext == ".parquet" else "csv" if ext == ".csv" else "unknown"
     fmt = fmt or fmt_inferred
 
+    meta = dict(meta or {})
+    workflow_topic = str(topic_id or meta.get("workflow_topic") or meta.get("source_topic") or "")
     nowt = now_ms()
     dataset_id = f"ds_{uuid.uuid4().hex[:8]}"
-    artifact_id = _mk_artifact_id(f"{rid}|{topic_id}|datasets|{path}|{time.time()}", prefix="fx")
+    artifact_id = _mk_artifact_id(f"{rid}|{workflow_topic}|datasets|{path}|{time.time()}", prefix="fx")
 
-    item = {
+    item = _normalize_dataset_item({
         "id": dataset_id,
         "artifact_id": artifact_id,
         "name": name,
@@ -350,23 +388,26 @@ def bb_register_dataset_path(
         "schema": columns,
         "created_ms": nowt,
         "agent": created_by,
-        "desc": (meta or {}).get("desc"),
-        "meta": meta or {},
-        "topic_id": topic_id,
-    }
+        "desc": meta.get("desc"),
+        "meta": meta,
+        "topic_id": workflow_topic,
+        "kind": meta.get("kind") or meta.get("dataset_kind") or "",
+        "role": meta.get("role") or meta.get("dataset_role") or "",
+        "aliases": meta.get("aliases") or meta.get("dataset_aliases") or [],
+    })
     with BLACKBOARD_LOCK:
         reg = _load(rid)
         reg.setdefault("datasets", []).append(item)
 
         reg.setdefault("artifacts", []).append({
             "artifact_id": artifact_id,
-            "topic_id": topic_id,
+            "topic_id": workflow_topic,
             "section": "datasets",
             "created_by": created_by,
             "created_at_ms": nowt,
             "uri": path,
             "preview": name or os.path.basename(path),
-            "intended_owner": (meta or {}).get("intended_owner", "")
+            "intended_owner": meta.get("intended_owner", "")
         })
         _save(rid, reg)
 
@@ -374,11 +415,11 @@ def bb_register_dataset_path(
     try:
         emit_bb_write(
             agent=created_by,
-            topic_id=topic_id,
+            topic_id=workflow_topic,
             section="datasets",
             artifact_id=artifact_id,
             uri=path,
-            intended_owner=(meta or {}).get("intended_owner", ""),
+            intended_owner=meta.get("intended_owner", ""),
             turn_index=(state or {}).get("turn_counter"),
             state=state
         )
@@ -388,27 +429,101 @@ def bb_register_dataset_path(
             ok=True,
             latency_ms=0,
             args_head=name[:120],
-            topic_id=topic_id,
+            topic_id=workflow_topic,
             state=state,
             turn_index=(state or {}).get("turn_counter")
         )
     except Exception:
         pass
 
+    sync_blackboard_state(state, rid)
     return {"status": "ok", "dataset": item}
 
 def bb_list_datasets_py(run_id: Optional[str] = None) -> List[Dict[str, Any]]:
     rid = _resolve_run_id(run_id)
-    return _load(rid).get("datasets", [])
+    return [_normalize_dataset_item(it) for it in _load(rid).get("datasets", [])]
 
 def bb_latest_dataset_py(run_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
     rid = _resolve_run_id(run_id)
-    ds = _load(rid).get("datasets", [])
+    ds = bb_list_datasets_py(rid)
     return ds[-1] if ds else None
 
 def get_bb_snapshot(run_id: Optional[str] = None) -> Dict[str, Any]:
     rid = _resolve_run_id(run_id)
-    return _load(rid)
+    reg = _load(rid)
+    reg["datasets"] = [_normalize_dataset_item(it) for it in reg.get("datasets", [])]
+    return reg
+
+
+def sync_blackboard_state(state: Optional[Dict[str, Any]], run_id: Optional[str] = None) -> Dict[str, Any]:
+    """Mirror the canonical registry snapshot into state['blackboard']."""
+    snapshot = get_bb_snapshot(run_id)
+    if isinstance(state, dict):
+        state["blackboard"] = snapshot
+    return snapshot
+
+
+def bb_find_dataset_py(
+    run_id: Optional[str] = None,
+    *,
+    prefer_name: str = "",
+    prefer_topic: str = "",
+    prefer_kind: str = "",
+    prefer_role: str = "",
+) -> Optional[Dict[str, Any]]:
+    """Find the best-matching dataset from the canonical registry."""
+    items = bb_list_datasets_py(run_id)
+    if not items:
+        return None
+
+    needle = (prefer_name or prefer_topic or "").strip().lower()
+    kind = (prefer_kind or "").strip().lower()
+    role = (prefer_role or "").strip().lower()
+
+    best: Optional[Dict[str, Any]] = None
+    best_score = -1
+    for idx, item in enumerate(items):
+        score = idx  # stable recency tiebreaker
+        name = str(item.get("name") or "").lower()
+        topic = str(item.get("topic_id") or "").lower()
+        item_kind = str(item.get("kind") or "").lower()
+        item_role = str(item.get("role") or "").lower()
+        aliases = [str(a).lower() for a in item.get("aliases", [])]
+
+        if needle:
+            if name == needle:
+                score += 1000
+            elif needle in aliases:
+                score += 950
+            elif topic == needle:
+                score += 850
+            elif needle in name:
+                score += 700
+            elif any(needle in alias for alias in aliases):
+                score += 650
+
+            if needle.startswith("obs") and item_kind == "observation":
+                score += 120
+            if "baseline" in needle and item_kind == "baseline":
+                score += 120
+
+        if kind:
+            if item_kind == kind:
+                score += 500
+            else:
+                score -= 200
+
+        if role:
+            if item_role == role:
+                score += 120
+            else:
+                score -= 50
+
+        if score > best_score:
+            best = item
+            best_score = score
+
+    return best
 
 # ========= LangChain tools（供 LLM 呼叫；回傳 JSON 字串） =========
 
@@ -661,14 +776,7 @@ def _write_to_blackboard_impl(
         _save(rid, reg)
 
     # 鏡射到 state（讓同回合可見）
-    if isinstance(state, dict):
-        shadow = {
-            "artifact_id": fxid, "topic_id": topic_id or "", "section": section,
-            "created_by": agent_name, "created_at_ms": now_ms(), "uri": uri_path,
-            "preview": (summary or str(content)[:120]), "intended_owner": owner or ""
-        }
-        state.setdefault("blackboard", {}).setdefault(section, []).append(shadow)
-
+    sync_blackboard_state(state, rid)
     return {"status": "ok", "artifact_id": fxid, "uri": uri_path, "section": section, "topic_id": topic_id or ""}
 
 @tool

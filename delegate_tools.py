@@ -423,11 +423,8 @@ def make_blackboard_tools(state: Dict[str, Any], agent_name: str) -> Tuple[List,
 
     # ---- helpers ----
     def _bb(st: Dict[str, Any]) -> Dict[str, Any]:
-        st.setdefault("blackboard", {})
-        bb = st["blackboard"]
-        for k in ("facts", "datasets", "citations", "open_issues"):
-            bb.setdefault(k, [])
-        return bb
+        run_id = st.get("run_id") or st.get("RUN_ID") or os.environ.get("RUN_ID", "")
+        return bb_tools.sync_blackboard_state(st, run_id=run_id)
 
     def _topic_id(explicit: Optional[str] = None) -> str:
         if explicit: return explicit
@@ -596,6 +593,204 @@ def make_blackboard_tools(state: Dict[str, Any], agent_name: str) -> Tuple[List,
         return f"Request to delegate to '{to_norm}' recorded."
 
     # ✅ 回傳含有 request_delegate 的工具清單
+    return [read_blackboard, write_to_blackboard, request_delegate], p2p_req_box
+
+
+def make_blackboard_tools(state: Dict[str, Any], agent_name: str) -> Tuple[List, List]:
+    """Canonical blackboard tools backed by bb_tools as the single source of truth."""
+    rl = get_run_logger()
+
+    def _bb(st: Dict[str, Any]) -> Dict[str, Any]:
+        run_id = st.get("run_id") or st.get("RUN_ID") or os.environ.get("RUN_ID", "")
+        return bb_tools.sync_blackboard_state(st, run_id=run_id)
+
+    def _topic_id(explicit: Optional[str] = None) -> str:
+        if explicit:
+            return explicit
+        return ((state.get("topic_ctx") or {}).get("topic_id") or state.get("topic_id") or "")
+
+    def _owner(explicit: Optional[str] = None) -> str:
+        if explicit:
+            return explicit
+        return ((state.get("topic_ctx") or {}).get("owner") or state.get("owner") or "")
+
+    p2p_req_box: List[Dict[str, Any]] = []
+
+    @tool("read_blackboard")
+    def read_blackboard(
+        keys: List[Literal["facts", "datasets", "citations", "open_issues"]] = None,
+        limit: int = 3,
+    ) -> dict:
+        """Read blackboard sections from the canonical registry snapshot."""
+        sel_keys = keys or ["datasets", "facts", "citations"]
+        with rl.tool_exec(agent=agent_name, tool="read_blackboard",
+                          task_id=os.getenv("TASK_ID"),
+                          args={"keys": sel_keys, "limit": limit}) as t:
+            bb = _bb(state)
+
+            def _head(xs):
+                return list(reversed(xs))[: int(limit or 3)]
+
+            res = {}
+            for k in sel_keys:
+                items = _head(bb.get(k, []))
+                res[k] = items
+                fx_ids = [it.get("artifact_id") for it in items if isinstance(it, dict) and it.get("artifact_id")]
+                if fx_ids:
+                    emit_bb_read(
+                        agent=agent_name,
+                        topic_id=_topic_id(),
+                        section=k,
+                        fact_ids_served=fx_ids,
+                        turn_index=state.get("turn_counter"),
+                        state=state,
+                    )
+            note_tool_call(
+                agent=agent_name,
+                tool_name="read_blackboard",
+                ok=True,
+                latency_ms=None,
+                args_head=f"keys={sel_keys},limit={limit}",
+                topic_id=_topic_id(),
+                state=state,
+                turn_index=state.get("turn_counter"),
+            )
+            t.ok(True)
+
+        state.setdefault("tool_events", []).append({
+            "ts": datetime.datetime.now().isoformat(),
+            "agent": agent_name,
+            "tool": "read_blackboard",
+            "ok": True,
+            "args": {"keys": sel_keys, "limit": limit},
+        })
+        return res
+
+    class WriteToBlackboardArgs(BaseModel):
+        section: Literal["facts", "datasets", "citations", "open_issues"] = Field(..., description="The section to write.")
+        summary: str = Field(..., description="Concise summary.")
+        content: Dict[str, Any] = Field(..., description="Detail payload (e.g., df_payload for datasets).")
+
+    @tool("write_to_blackboard", args_schema=WriteToBlackboardArgs)
+    def write_to_blackboard(section: str, summary: str, content: Dict[str, Any]) -> str:
+        """Write a blackboard entry through the canonical bb_tools API."""
+        with rl.tool_exec(agent=agent_name, tool="write_to_blackboard",
+                          task_id=os.getenv("TASK_ID"),
+                          args={"summary": summary, **(content or {})},
+                          section=section) as t:
+            if section == "datasets" and "df_payload" not in (content or {}):
+                t.ok(False)
+                state.setdefault("tool_events", []).append({
+                    "ts": datetime.datetime.now().isoformat(),
+                    "agent": agent_name,
+                    "tool": "write_to_blackboard",
+                    "ok": False,
+                    "args": {"section": section, "summary": summary},
+                })
+                return "Error: 'datasets' entry MUST contain 'df_payload'."
+
+            run_id = state.get("run_id") or os.environ.get("RUN_ID", "")
+            maybe_uri = (content or {}).get("df_payload", "") if section == "datasets" else (content or {}).get("uri", "")
+
+            if section == "datasets":
+                payload = (content or {}).get("df_payload") or {}
+                dataset_path = payload.get("path") if isinstance(payload, dict) else str(payload)
+                dataset_name = payload.get("name") if isinstance(payload, dict) else ""
+                out = bb_tools.bb_register_dataset_path(
+                    run_id=run_id,
+                    name=dataset_name or os.path.splitext(os.path.basename(dataset_path))[0],
+                    path=dataset_path,
+                    fmt=(payload.get("format") if isinstance(payload, dict) else None) or (content or {}).get("format"),
+                    rows=(payload.get("rows") if isinstance(payload, dict) else None) or (content or {}).get("rows"),
+                    columns=(content or {}).get("columns"),
+                    meta={
+                        **(content or {}),
+                        "summary": summary,
+                        "workflow_topic": _topic_id(),
+                        "intended_owner": (content or {}).get("owner", _owner()),
+                        "kind": (content or {}).get("kind", ""),
+                        "role": (content or {}).get("role", ""),
+                    },
+                    topic_id=_topic_id(),
+                    created_by=agent_name,
+                    state=state,
+                )
+                artifact_id = ((out or {}).get("dataset") or {}).get("artifact_id", "")
+                maybe_uri = dataset_path
+            else:
+                out = bb_tools._write_to_blackboard_impl(
+                    section=section,
+                    summary=summary,
+                    content=content,
+                    state=state,
+                    topic_id=_topic_id(),
+                    owner=_owner(),
+                    created_by=agent_name,
+                )
+                artifact_id = out.get("artifact_id", "")
+
+            try:
+                if section == "datasets" and maybe_uri:
+                    rl.artifact(task_id=os.getenv("TASK_ID") or "", type_="dataset",
+                                path_or_hash=maybe_uri,
+                                preview_stats={"summary": summary})
+                if section == "open_issues":
+                    rl.open_issue(by=agent_name,
+                                  owner=(content or {}).get("owner", _owner() or "DE"),
+                                  summary=summary,
+                                  severity=(content or {}).get("severity", "blocking"))
+            except Exception:
+                pass
+
+            note_tool_call(agent=agent_name, tool_name="write_to_blackboard", ok=True,
+                           latency_ms=None, args_head=f"{section}:{summary[:80]}",
+                           topic_id=_topic_id(), state=state,
+                           turn_index=state.get("turn_counter"))
+            t.ok(True)
+
+        state.setdefault("tool_events", []).append({
+            "ts": datetime.datetime.now().isoformat(),
+            "agent": agent_name,
+            "tool": "write_to_blackboard",
+            "ok": True,
+            "args": {"section": section, "summary": summary},
+        })
+        return f"Successfully wrote to blackboard section '{section}'."
+
+    @tool("request_delegate")
+    def request_delegate(to: str, task: str) -> str:
+        """Record a peer-to-peer delegate request for the router."""
+        to_norm = (to or "").strip().upper()
+        if to_norm not in {"DS", "DE", "ME"}:
+            return "Error: 'to' must be one of DS/DE/ME."
+        p2p_req_box.append({"to": to_norm, "task": task})
+
+        with rl.tool_exec(agent=agent_name, tool="request_delegate",
+                          task_id=os.getenv("TASK_ID"),
+                          args={"to": to_norm, "task": task}) as t:
+            t.ok(True)
+
+        emit_event({
+            "event_type": "message",
+            "agent": agent_name,
+            "addressed_to": to_norm,
+            "channel": "private",
+            "topic_id": _topic_id(),
+            "turn_index": int(state.get("turn_counter") or 0),
+            "content_head": (task or "")[:160],
+        }, state=state)
+
+        emit_compliance(state=state, side_channel_increment=1)
+
+        state.setdefault("tool_events", []).append({
+            "ts": datetime.datetime.now().isoformat(),
+            "agent": agent_name,
+            "tool": "request_delegate",
+            "ok": True,
+            "args": {"to": to_norm, "task": task},
+        })
+        return f"Request to delegate to '{to_norm}' recorded."
+
     return [read_blackboard, write_to_blackboard, request_delegate], p2p_req_box
 
 

@@ -54,7 +54,10 @@ STATIC_CORES: Dict[str, str] = {
         "  2. Statistical test: compare fault mean vs normal mean; report p-value\n"
         "  3. If multivariate: PCA or T² Hotelling control chart to identify dominant sensors\n"
         "Always include: numpy seed, plt.savefig() path, numeric conclusion (e.g. 'mean diff = 12.3°C').\n"
-        "Use data from blackboard datasets; call ds_pick_dataset_path to locate the file."
+        "Use data from blackboard datasets; call ds_pick_dataset_path to locate the file.\n"
+        "Hard rules: never call tool APIs such as write_to_blackboard from inside execute_python_code.\n"
+        "Treat tools as separate outer tool calls only. On Windows, file paths must use raw strings "
+        "(r'...') or forward slashes."
     ),
 }
 
@@ -80,8 +83,8 @@ PHASE_SNIPPETS: Dict[str, str] = {
         "Hard rules (must follow):\n"
         "  - DO NOT instruct DE to filter by faultnumber — that would be cheating (the label "
         "    is exactly what you must infer).\n"
-        "  - The observation parquet is already on the blackboard. DE should LOAD it via "
-        "    ds_pick_dataset_path / bb_get_latest_dataset, not re-query SQL.\n"
+        "  - The observation parquet is already on the blackboard. DE should inspect "
+        "    read_blackboard(keys=['datasets']) and load the named datasets, not re-query SQL.\n"
         "  - ME MUST call kg_match_fault_by_sensors before final_answer so candidate scores "
         "    are logged (used for accuracy and confidence).\n"
         "Recommended chain:\n"

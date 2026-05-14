@@ -179,7 +179,7 @@ def _build_seed_message(obs_dataset: str, baseline_dataset: str, n_rows: int) ->
         f"(per-sensor mean / std / percentiles computed from faultnumber=0).\n\n"
         "Do NOT re-query SQL — the datasets are already on the blackboard.\n\n"
         "Workflow:\n"
-        "1. delegate_to_de to load both datasets (use bb_get_latest_dataset or bb_preview_dataset).\n"
+        "1. delegate_to_de to inspect read_blackboard(keys=['datasets']) and load both named datasets.\n"
         "2. delegate_to_ds to compute per-sensor z-score = (obs.mean - baseline.mean) / baseline.std "
         "and report the top-5 sensors by |z-score|.\n"
         "3. delegate_to_me with kg_match_fault_by_sensors using those top sensors, then "
@@ -203,7 +203,7 @@ def diagnose(
     from langchain_core.messages import HumanMessage
     from common import ensure_run_id
     from metrics import init_metrics
-    from bb_tools import bb_register_dataset_path
+    from bb_tools import bb_register_dataset_path, sync_blackboard_state
     from supervisor_workflow import build_team_graph
 
     run_id = f"diag_{uuid.uuid4().hex[:10]}"
@@ -233,7 +233,7 @@ def diagnose(
 
     state: dict[str, Any] = {
         "messages": [],
-        "blackboard": {},
+        "blackboard": {"facts": [], "datasets": [], "citations": [], "open_issues": [], "artifacts": []},
         "tool_events": [],
         "violations": [],
         "pdf_dir": PDF_DOCS_PATH,
@@ -262,7 +262,14 @@ def diagnose(
             fmt="parquet",
             rows=len(obs_df),
             columns=list(obs_df.columns),
-            meta={"source": "diagnose_flow", "unlabeled": True, "intended_owner": "DS"},
+            meta={
+                "source": "diagnose_flow",
+                "unlabeled": True,
+                "intended_owner": "DS",
+                "kind": "observation",
+                "role": "input",
+                "aliases": [obs_dataset_name, "observation"],
+            },
             topic_id="diagnose",
             created_by="SYSTEM",
             state=state,
@@ -276,11 +283,18 @@ def diagnose(
                 fmt="parquet",
                 rows=len(base_df),
                 columns=list(base_df.columns),
-                meta={"source": "build_baseline_stats", "intended_owner": "DS"},
+                meta={
+                    "source": "build_baseline_stats",
+                    "intended_owner": "DS",
+                    "kind": "baseline",
+                    "role": "reference",
+                    "aliases": [baseline_dataset_name, "baseline"],
+                },
                 topic_id="diagnose",
                 created_by="SYSTEM",
                 state=state,
             )
+        sync_blackboard_state(state, run_id)
     except Exception as e:
         return DiagnosisResult(
             run_id=run_id, ts=ts, observation_path=observation_path,
