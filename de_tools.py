@@ -6,7 +6,7 @@ from bb_tools import bb_register_dataset
 import os, json, pandas as pd
 from typing import Dict, Any, List, Optional
 from run_logger import get_run_logger
-from bb_tools import write_to_blackboard as _bb_write   # 程式 API 版
+from bb_tools import _write_to_blackboard_impl as _bb_write   # 程式 API 版
 from bb_tools import bb_register_dataset_path
 
 
@@ -62,10 +62,15 @@ def _strip_leading_sql_comments(query: str) -> str:
         stripped = updated
 
 
+_MAX_QUERY_ROWS = int(os.environ.get("DE_MAX_ROWS", "10000"))
+_HAS_LIMIT = re.compile(r"\bLIMIT\b", re.IGNORECASE)
+
 def _validate_read_only_select(query: str) -> str:
     normalized = _strip_leading_sql_comments(str(query or ""))
     if not normalized or not normalized.lower().startswith("select") or FORBIDDEN.search(normalized):
         raise ValueError("Only read-only SELECT queries are allowed.")
+    if not _HAS_LIMIT.search(normalized):
+        normalized = normalized.rstrip().rstrip(";") + f" LIMIT {_MAX_QUERY_ROWS}"
     return normalized
 
 @tool

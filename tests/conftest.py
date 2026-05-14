@@ -85,13 +85,6 @@ def mock_state():
 
 
 @pytest.fixture
-def tmp_path():
-    """Workspace-safe tmp_path override for Windows environments with locked pytest temp roots."""
-    base = Path(r"C:\Users\chengting\AppData\Local\Temp\codex-pytest")
-    base.mkdir(parents=True, exist_ok=True)
-    path = base / uuid.uuid4().hex[:8]
-    path.mkdir()
-    try:
-        yield path
-    finally:
-        shutil.rmtree(path, ignore_errors=True)
+def tmp_path(tmp_path_factory):
+    """Portable tmp_path using pytest's built-in factory (works on CI and any OS)."""
+    return tmp_path_factory.mktemp("mas_test")

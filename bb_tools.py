@@ -608,7 +608,7 @@ def _dump_content_blob(run_id: Optional[str], artifact_id: str, content: Any) ->
 #
 #     return {"status": "ok", "artifact_id": fxid, "uri": uri_path, "section": section, "topic_id": topic_id or ""}
 
-def write_to_blackboard(
+def _write_to_blackboard_impl(
     *,
     section: str,
     summary: str = "",
@@ -679,7 +679,7 @@ def write_to_blackboard(section: str, summary: str = "", content: Any = None) ->
     回傳 JSON: {"status":"ok","artifact_id":...,"uri":...}
     """
     try:
-        out = write_to_blackboard(
+        out = _write_to_blackboard_impl(
             section=section,
             summary=summary,
             content=content,

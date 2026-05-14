@@ -153,7 +153,12 @@ def _consume_p2p_requests(res: Dict[str, Any], state: Dict[str, Any]) -> None:
                 # 相容舊版 ensure_topic_in_args(state 參數不存在) 的寫法
                 base_args = ensure_topic_in_args(base_args, target_agent=to)
 
-            # 3) 真的執行子委派
+            # 3) 真的執行子委派（先過節流計數，再執行）
+            with _metrics_lock:
+                current = state.get("metrics", {}).get("global_tool_calls", 0)
+                if current >= MAX_GLOBAL_TOOL_CALLS:
+                    break
+                state.setdefault("metrics", {})["global_tool_calls"] = current + 1
             _ = _exec_one_tool(sub_name, base_args, state)
 
             # 4) 記一條 delegate 邊（誰→誰）
