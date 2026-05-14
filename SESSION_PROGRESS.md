@@ -21,27 +21,44 @@ Do not use it for long-term architecture explanation. That belongs in:
 
 ## Current Status
 
-- Regression baseline: `pytest tests/ -q → 85 passed` (2026-05-14, commit b2af005)
+- Regression baseline: `pytest tests/ -q → 93 passed` (2026-05-14, commit f2e8384)
 - Live evaluation baseline: `9/9 PASS` (2026-05-13)
-- 4 CODEX_REVIEW findings resolved and committed (see below)
+- 執行中工作軌：**Production-Ready Fault Diagnosis Pipeline**（Plan: `C:\Users\chengting\.claude\plans\jolly-plotting-spring.md`）
+- 已完成 Phase 1, Phase 2（共 6 個 phase）
 
 ## Current Phase
 
-Phase: production hardening — CODEX_REVIEW fixes complete
+Phase: production diagnosis pipeline — **Phase 3 進行中** (FastAPI server + diagnose_flow)
 
 ## Completed Recently (2026-05-14)
 
-- **bb_tools.py**: renamed Python helper to `_write_to_blackboard_impl`；消除 @tool 同名覆蓋導致的遞迴失敗
-- **de_tools.py**: 查詢無 LIMIT 時自動注入 `LIMIT {DE_MAX_ROWS}`（預設 10000）；更新 import
-- **router.py**: `_consume_p2p_requests` 子委派前加 `_metrics_lock` 節流計數，關閉 P2P 繞過漏洞
-- **tests/conftest.py**: 硬編碼路徑換成 `tmp_path_factory.mktemp()`，CI 可攜
-- 封存舊 MD 文件、舊 prompt cards、舊 PNG plots（commit 1217510）
+### Diagnosis Pipeline — Phase 1（commit b159359）
+- `scripts/build_baseline_stats.py`：52 sensors × {mean, std, p01, p50, p99} 從 250K 筆 faultnumber=0 → `datasets/baseline_stats.parquet`（7KB, committed）
+- `scripts/simulate_observation.py`：從 tep_combined.db 抽 N 筆，剝掉 faultnumber + simulationrun 後輸出 parquet
+- `scripts/init_live_buffer.py`：建立 `live_observations.db`（observations + diagnoses tables）
+- `scripts/build_kg_sensor_relationships.py`：Neo4j enrichment（72 個 HAS_SENSOR 關係，已 dry-run，待連線跑 live）
+
+### Diagnosis Pipeline — Phase 2（commit f2e8384）
+- `tep_knowledge.match_fault_by_sensors_local()`：Jaccard 評分，tie-break 低 fault_id
+- `neo4j_kg.match_fault_by_sensors()`：Neo4j primary + local fallback（同 query_fault_kg 模式）
+- `me_tools.kg_match_fault_by_sensors`：新 @tool 註冊到 ME tool set
+- 8 個單元測試（local + Neo4j success + Neo4j failure fallback + empty records + ME wrapper）
+
+### 早先（commit b2af005）— CODEX_REVIEW 4 個修補
+- `bb_tools.py` 同名覆蓋、`de_tools.py` SQL LIMIT、`router.py` P2P 節流、`tests/conftest.py` 硬編碼路徑
 
 ## Current Working Assumptions
 
-- 無已知阻斷問題；下一輪優先從 eval / 論文寫作方向選
-- `archive/` 僅供歷史參考，不影響 bootstrap
+- Neo4j AuraDB 仍可連（KG enrichment 跑 live 時需驗證）
+- 不更動 `chat_cli.py`，FastAPI 是 production entry，CLI 是互動 REPL
+- 三個 share-sensor 的 fault 家族（{1,2,3,6,7}, {4,11,13,14}, {5,12,15}, {8,9,10}）造成的診斷模糊性是正確行為，不是 bug
 
 ## Next Recommended Step
 
-1. 決定下一個工作軌道：(a) eval 深化、(b) 論文分析、(c) 繼續 production hardening
+1. **Phase 3**：`api_server.py` + `diagnose_flow.py` + `diagnoses.db` schema（FastAPI `/diagnose`、`/observations`、`/diagnoses`、`/health`）
+2. 接著 Phase 3.5（stream simulator + watcher）、Phase 4（prompt + dashboard）、Phase 5（tests + eval）、Phase 6（hardening）
+
+## Open Items
+
+- KG enrichment 待真實 Neo4j 連線後跑：`python scripts/build_kg_sensor_relationships.py`（已 dry-run 確認）
+- 根目錄孤兒 PNG（separator_temp_flow.png 等）尚未清理；屬於先前 DS 隨意 savefig 問題
