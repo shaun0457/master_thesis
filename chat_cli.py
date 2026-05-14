@@ -20,7 +20,7 @@ LOG_DIR = "interactive_logs"
 RUN_LOG_DIR = "run_logs"
 os.makedirs(LOG_DIR, exist_ok=True)
 os.makedirs(RUN_LOG_DIR, exist_ok=True)
-DATA_DB = "sqlite:///tep_database.db"
+DATA_DB = "sqlite:///tep_combined.db"
 
 
 # ----- 辅助函数 (保持不变) -----
