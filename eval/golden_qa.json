@@ -70,5 +70,29 @@
     "min_keyword_hits": 2,
     "agent_path": ["ME"],
     "notes": "KG knowledge: IDV 11 is reactor cooling water valve stiction; primary sensor XMEAS(9) reactor temperature"
+  },
+  {
+    "id": "gq10",
+    "question": "If an unlabeled TEP sensor observation shows xmeas_9 and xmeas_7 deviating sharply from baseline while xmv_6 is saturated, which IDV fault family is most likely and what are the candidate fault IDs?",
+    "expected_keywords": ["cooling water", "reactor", "idv", "4", "11", "14"],
+    "min_keyword_hits": 2,
+    "agent_path": ["ME"],
+    "notes": "Reverse lookup: xmeas_9 + xmeas_7 + xmv_6 → fault family {4, 11, 14} (reactor cooling water disturbances)"
+  },
+  {
+    "id": "gq11",
+    "question": "If the deviant sensors in an unlabeled observation are xmeas_1, xmeas_2, xmeas_3, xmeas_4, and xmeas_6, which TEP fault family does this point to?",
+    "expected_keywords": ["feed", "stream", "idv", "1", "2", "3", "6", "7"],
+    "min_keyword_hits": 2,
+    "agent_path": ["ME"],
+    "notes": "Reverse lookup: feed-related XMEAS pattern → fault family {1, 2, 3, 6, 7} (feed disturbances)"
+  },
+  {
+    "id": "gq12",
+    "question": "When an unlabeled sensor observation shows xmeas_23..28 (component composition sensors) deviating from baseline with no temperature anomaly, which IDV fault family is the most likely cause?",
+    "expected_keywords": ["composition", "feed", "idv", "8", "9", "10"],
+    "min_keyword_hits": 2,
+    "agent_path": ["ME"],
+    "notes": "Reverse lookup: component composition XMEAS pattern → fault family {8, 9, 10} (composition variations)"
   }
 ]
