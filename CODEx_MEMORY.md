@@ -33,5 +33,5 @@ This file stores durable, medium-term memory for `MT-phase-2`.
 
 ## Open Questions
 
-- Whether `PLAN.md` and `PROGRESS.md` should be retired after bootstrap adoption or preserved as project-history documents.
+- Whether `PLAN.md` and `PROGRESS.md` should remain as compact archive documents or be retired completely later.
 - Whether future session bootstrap should also reference any neighboring KG repo workflows explicitly.

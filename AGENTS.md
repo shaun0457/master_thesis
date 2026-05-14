@@ -18,7 +18,7 @@ The codebase centers on a LangGraph supervisor that delegates industrial-domain 
 - Treat [WORKSPACE_INDEX.md](./WORKSPACE_INDEX.md) as the stable repo map.
 - Treat [CODEx_MEMORY.md](./CODEx_MEMORY.md) as medium-term durable memory.
 - Treat [SESSION_PROGRESS.md](./SESSION_PROGRESS.md) as the single source of truth for current state and next step.
-- Do not use `PLAN.md` or `PROGRESS.md` as the startup source once the bootstrap set is adopted; they are legacy planning/history files.
+- Do not use `PLAN.md` or `PROGRESS.md` as startup sources; they are legacy archive documents.
 - Keep shared operating rules in this file and keep [CLAUDE.md](./CLAUDE.md) thin.
 - Before ending a meaningful work block, update [SESSION_PROGRESS.md](./SESSION_PROGRESS.md) if the phase, blockers, assumptions, or next step changed.
 

@@ -15,5 +15,5 @@ Then continue from the current phase and next action in [SESSION_PROGRESS.md](./
 - Use [WORKSPACE_INDEX.md](./WORKSPACE_INDEX.md) for repo navigation and canonical entrypoints.
 - Use [CODEx_MEMORY.md](./CODEx_MEMORY.md) for durable decisions and stable domain context.
 - Use [SESSION_PROGRESS.md](./SESSION_PROGRESS.md) for the latest status, active artifacts, blockers, and next action.
-- Do not treat `PLAN.md` or `PROGRESS.md` as authoritative startup documents after the bootstrap set is adopted.
+- Do not treat `PLAN.md` or `PROGRESS.md` as authoritative startup documents.
 - Before ending a substantial work block, update [SESSION_PROGRESS.md](./SESSION_PROGRESS.md) if the working state changed.
