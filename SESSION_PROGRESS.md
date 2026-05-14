@@ -97,3 +97,5 @@ Phase: **all diagnosis pipeline phases shipped** — ready for live demo / eval
 
 - KG enrichment 待真實 Neo4j 連線後跑：`python scripts/build_kg_sensor_relationships.py`（已 dry-run 確認）
 - 根目錄孤兒 PNG（separator_temp_flow.png 等）尚未清理；屬於先前 DS 隨意 savefig 問題
+
+- 2026-05-14 architecture check: diagnosis still spans two unsynchronized blackboard paths. `delegate_tools.read_blackboard()` reads only `state["blackboard"]`, while `bb_register_dataset_path()` / `bb_list_datasets_py()` / `ds_pick_dataset_path()` read the file-backed registry. In `diagnose_flow.py`, seeded in-memory datasets use dataset-like `topic_id` values (`obs_<run_id>`, `baseline_stats`) but disk registrations use `topic_id="diagnose"`, so DS lookup by `prefer_topic` can miss and then fall back to the wrong latest dataset. DS prompts also do not explicitly forbid treating `write_to_blackboard` as in-subprocess Python or remind the model to use raw strings for Windows paths.
