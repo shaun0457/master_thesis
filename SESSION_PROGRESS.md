@@ -138,6 +138,12 @@ Read this after `AGENTS.md` and `WORKSPACE_INDEX.md` when starting a new session
   - prompt now explicitly flags dangling lead-ins such as `from there to a` as evidence of an incomplete side
   - prompt now explicitly allows keeping only one coherent sub-paragraph instead of trying to preserve every fragment
   - new regression test in `tests\test_tep_pdf_kg_fusion.py` covers the `candidate_0010`-style paragraph/list hybrid failure mode
+- Single-candidate merge test for `candidate_0010` on 2026-05-15:
+  - reran only `candidate_0010` with the v2 prompt on `gemini-2.5-flash-lite`
+  - new decision stayed `replace`, but now extracted only the cleaner standalone sub-paragraph: `The product mix is normally dictated by product demands. The plant productionrate is set by market demand or capacity limitations.`
+  - this is an improvement over the prior awkward hybrid (`from there to a Mode 1 is the base case`)
+  - merge behavior is now better understood: the repair correctly replaced the candidate placeholder, but a separate noisy deterministic-fusion prose row still remains immediately after it, so the local region is improved but not fully clean
+  - implication: some remaining bad prose is not a prompt problem anymore; it is a candidate-segmentation / deterministic-fusion issue because the bad sentence is coming from a different retained base row
 
 ## Open Items
 
@@ -154,4 +160,4 @@ Read this after `AGENTS.md` and `WORKSPACE_INDEX.md` when starting a new session
 
 ## Next Recommended Step
 
-1. Re-run `candidate_0010`-style `prose_conflict` cases on `gemini-2.5-flash-lite` after the v2 prompt tightening and confirm the model now prefers a single coherent sub-paragraph or a defer/omit outcome over awkward hybrids.
+1. Improve deterministic fusion / candidate segmentation around adjacent `prose_conflict` rows in `Process Description`, so repair can replace or suppress the remaining bad retained base prose instead of only inserting a cleaner neighboring sub-paragraph.
