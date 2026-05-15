@@ -349,6 +349,108 @@ def test_pipeline_parallel_merge_preserves_chunk_order(tmp_path: Path, monkeypat
     ]
 
 
+def test_pipeline_prefers_fusion_repaired_markdown_when_present(tmp_path: Path, monkeypatch):
+    document = _sample_document()
+
+    def fake_run_parser(pdf_path, manifest, parser_name, output_dir):
+        Path(output_dir).mkdir(parents=True, exist_ok=True)
+        clone = NormalizedDocument(
+            doc_id=document.doc_id,
+            source_path=pdf_path,
+            parser_used=parser_name,
+            parser_status="ok",
+            selected_as_canonical=parser_name == manifest.preferred_parser,
+            title=document.title,
+            document_md=document.document_md,
+            sections=document.sections,
+            pages=document.pages,
+            metadata={
+                "parser_json": _sample_parser_json(),
+                "document_json_path": str(Path(output_dir) / "document.json"),
+                "document_markdown_path": str(Path(output_dir) / "document.md"),
+            },
+        )
+        (Path(output_dir) / "document.md").write_text(clone.document_md, encoding="utf-8")
+        (Path(output_dir) / "document.json").write_text(json.dumps(_sample_parser_json()), encoding="utf-8")
+        return MagicMock(
+            parser_name=parser_name,
+            status="ok",
+            document=clone,
+            to_dict=lambda: {"parser_name": parser_name, "status": "ok", "document": clone.to_dict(), "warnings": [], "error": None},
+        )
+
+    monkeypatch.setattr("tep_pdf_kg.pipeline.run_parser", fake_run_parser)
+    manifest = DocumentManifest(
+        doc_id="DOWNS.pdf",
+        pdf_path=str(tmp_path / "DOWNS.pdf"),
+        output_dir=str(tmp_path / "out"),
+    )
+    Path(manifest.pdf_path).write_bytes(b"%PDF-1.4\n")
+    fusion_dir = Path(manifest.output_dir) / "fusion"
+    fusion_dir.mkdir(parents=True, exist_ok=True)
+    repaired_md = "## Fault 4\n\nRepaired markdown should win.\n"
+    (fusion_dir / "canonical.repaired.md").write_text(repaired_md, encoding="utf-8")
+
+    summary = run_document_pipeline(manifest, max_workers=1)
+
+    out_dir = Path(summary["output_dir"])
+    assert summary["canonical_source"] == "fusion_repaired_markdown"
+    assert (out_dir / "canonical_document.md").read_text(encoding="utf-8") == repaired_md
+
+
+def test_pipeline_resume_rebuilds_chunks_when_repaired_markdown_appears(tmp_path: Path, monkeypatch):
+    document = _sample_document()
+
+    def fake_run_parser(pdf_path, manifest, parser_name, output_dir):
+        Path(output_dir).mkdir(parents=True, exist_ok=True)
+        clone = NormalizedDocument(
+            doc_id=document.doc_id,
+            source_path=pdf_path,
+            parser_used=parser_name,
+            parser_status="ok",
+            selected_as_canonical=parser_name == manifest.preferred_parser,
+            title=document.title,
+            document_md=document.document_md,
+            sections=document.sections,
+            pages=document.pages,
+            metadata={
+                "parser_json": _sample_parser_json(),
+                "document_json_path": str(Path(output_dir) / "document.json"),
+                "document_markdown_path": str(Path(output_dir) / "document.md"),
+            },
+        )
+        (Path(output_dir) / "document.md").write_text(clone.document_md, encoding="utf-8")
+        (Path(output_dir) / "document.json").write_text(json.dumps(_sample_parser_json()), encoding="utf-8")
+        return MagicMock(
+            parser_name=parser_name,
+            status="ok",
+            document=clone,
+            to_dict=lambda: {"parser_name": parser_name, "status": "ok", "document": clone.to_dict(), "warnings": [], "error": None},
+        )
+
+    monkeypatch.setattr("tep_pdf_kg.pipeline.run_parser", fake_run_parser)
+    manifest = DocumentManifest(
+        doc_id="DOWNS.pdf",
+        pdf_path=str(tmp_path / "DOWNS.pdf"),
+        output_dir=str(tmp_path / "out"),
+    )
+    Path(manifest.pdf_path).write_bytes(b"%PDF-1.4\n")
+
+    first = run_document_pipeline(manifest, max_workers=1)
+    fusion_dir = Path(manifest.output_dir) / "fusion"
+    fusion_dir.mkdir(parents=True, exist_ok=True)
+    (fusion_dir / "canonical.repaired.md").write_text("## Fault 4\n\nFresh repaired markdown.\n", encoding="utf-8")
+
+    second = run_document_pipeline(manifest, resume=True, max_workers=1)
+
+    out_dir = Path(first["output_dir"])
+    assert first["canonical_source"] == "parser_markdown"
+    assert second["canonical_source"] == "fusion_repaired_markdown"
+    assert second["canonical_changed"] is True
+    assert second["resume_used"] is False
+    assert (out_dir / "canonical_document.md").read_text(encoding="utf-8") == "## Fault 4\n\nFresh repaired markdown.\n"
+
+
 def test_gemini_extractor_uses_structured_output(monkeypatch):
     import importlib
 

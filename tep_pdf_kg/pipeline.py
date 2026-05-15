@@ -152,6 +152,21 @@ def _document_from_cached_artifacts(manifest: DocumentManifest, output_dir: Path
     )
 
 
+def _write_canonical_document_artifacts(output_dir: Path, document: NormalizedDocument, canonical_source: str) -> None:
+    (output_dir / "canonical_document.md").write_text(document.document_md, encoding="utf-8")
+    _write_json(
+        output_dir / "canonical_document.json",
+        {
+            "doc_id": document.doc_id,
+            "parser_used": document.parser_used,
+            "canonical_source": canonical_source,
+            "document_markdown_path": str(output_dir / "canonical_document.md"),
+            "parser_json_path": document.metadata.get("document_json_path"),
+            "metadata": document.metadata,
+        },
+    )
+
+
 def _load_cached_chunks(output_dir: Path) -> list[ChunkRecord]:
     return [_chunk_from_row(row) for row in _read_jsonl(output_dir / "chunks.jsonl")]
 
@@ -171,15 +186,55 @@ def _apply_reviewed_chunks(chunks: list[ChunkRecord], reviewed_chunks_path: str 
     return chunks
 
 
-def _materialize_document_and_chunks(manifest: DocumentManifest, output_dir: Path, resume: bool) -> tuple[NormalizedDocument, list[ChunkRecord], str]:
+def _load_fusion_repaired_markdown(output_dir: Path, fallback: NormalizedDocument) -> NormalizedDocument | None:
+    repaired_path = output_dir / "fusion" / "canonical.repaired.md"
+    if not repaired_path.exists():
+        return None
+    metadata = dict(fallback.metadata)
+    metadata["fusion_repaired_markdown_path"] = str(repaired_path)
+    metadata["canonical_source"] = "fusion_repaired_markdown"
+    return NormalizedDocument(
+        doc_id=fallback.doc_id,
+        source_path=fallback.source_path,
+        parser_used=fallback.parser_used,
+        parser_status=fallback.parser_status,
+        selected_as_canonical=True,
+        title=fallback.title,
+        document_md=repaired_path.read_text(encoding="utf-8"),
+        sections=fallback.sections,
+        pages=fallback.pages,
+        metadata=metadata,
+    )
+
+
+def _apply_available_canonical_override(manifest: DocumentManifest, output_dir: Path, fallback: NormalizedDocument) -> NormalizedDocument:
+    repaired = _load_fusion_repaired_markdown(output_dir, fallback)
+    if repaired is not None:
+        return repaired
+    if manifest.reviewed_markdown_path:
+        return _load_reviewed_markdown(manifest.reviewed_markdown_path, fallback)
+    if manifest.reviewed_document_path:
+        return _load_reviewed_document(manifest.reviewed_document_path, fallback)
+    return fallback
+
+
+def _materialize_document_and_chunks(manifest: DocumentManifest, output_dir: Path, resume: bool) -> tuple[NormalizedDocument, list[ChunkRecord], str, bool]:
     chunk_path = output_dir / "chunks.jsonl"
     canonical_md_path = output_dir / "canonical_document.md"
     canonical_json_path = output_dir / "canonical_document.json"
 
     if resume and chunk_path.exists() and canonical_md_path.exists() and canonical_json_path.exists():
-        document, canonical_source = _document_from_cached_artifacts(manifest, output_dir)
-        chunks = _load_cached_chunks(output_dir)
-        return document, chunks, canonical_source
+        cached_document, cached_source = _document_from_cached_artifacts(manifest, output_dir)
+        preferred_document = _apply_available_canonical_override(manifest, output_dir, cached_document)
+        preferred_source = str(preferred_document.metadata.get("canonical_source", cached_source))
+        if preferred_source == cached_source and preferred_document.document_md == cached_document.document_md:
+            chunks = _load_cached_chunks(output_dir)
+            return preferred_document, chunks, preferred_source, False
+        _write_canonical_document_artifacts(output_dir, preferred_document, preferred_source)
+        chunks = build_chunks(preferred_document)
+        chunks = _apply_reviewed_chunks(chunks, manifest.reviewed_chunks_path)
+        _write_jsonl(output_dir / "chunks.jsonl", [chunk.to_dict() for chunk in chunks])
+        return preferred_document, chunks, preferred_source, True
 
     parser_results = []
     for parser_name in manifest.parser_candidates:
@@ -194,29 +249,15 @@ def _materialize_document_and_chunks(manifest: DocumentManifest, output_dir: Pat
     selected = _select_canonical_result(parser_results, manifest)
     document = selected.document
 
-    if manifest.reviewed_markdown_path:
-        document = _load_reviewed_markdown(manifest.reviewed_markdown_path, document)
-    elif manifest.reviewed_document_path:
-        document = _load_reviewed_document(manifest.reviewed_document_path, document)
+    document = _apply_available_canonical_override(manifest, output_dir, document)
 
     canonical_source = document.metadata.get("canonical_source", "parser_markdown")
-    (output_dir / "canonical_document.md").write_text(document.document_md, encoding="utf-8")
-    _write_json(
-        output_dir / "canonical_document.json",
-        {
-            "doc_id": document.doc_id,
-            "parser_used": document.parser_used,
-            "canonical_source": canonical_source,
-            "document_markdown_path": str(output_dir / "canonical_document.md"),
-            "parser_json_path": document.metadata.get("document_json_path"),
-            "metadata": document.metadata,
-        },
-    )
+    _write_canonical_document_artifacts(output_dir, document, canonical_source)
 
     chunks = build_chunks(document)
     chunks = _apply_reviewed_chunks(chunks, manifest.reviewed_chunks_path)
     _write_jsonl(output_dir / "chunks.jsonl", [chunk.to_dict() for chunk in chunks])
-    return document, chunks, canonical_source
+    return document, chunks, canonical_source, False
 
 
 def _status_ledger_path(output_dir: Path) -> Path:
@@ -470,9 +511,11 @@ def run_document_pipeline(
     if append_claims:
         resume = True
 
-    document, chunks, canonical_source = _materialize_document_and_chunks(manifest, output_dir, resume=resume)
+    document, chunks, canonical_source, canonical_changed = _materialize_document_and_chunks(manifest, output_dir, resume=resume)
 
-    if not resume:
+    effective_resume = resume and not canonical_changed
+
+    if not effective_resume:
         _reset_extraction_artifacts(output_dir)
 
     target_chunks, skipped_chunk_count = _chunk_execution_targets(
@@ -480,7 +523,7 @@ def run_document_pipeline(
         output_dir,
         start_chunk=start_chunk,
         max_chunks=max_chunks,
-        resume=resume,
+        resume=effective_resume,
     )
 
     execution_counts = _run_chunk_extraction(
@@ -512,7 +555,8 @@ def run_document_pipeline(
         "skipped_chunk_count": skipped_chunk_count,
         "start_chunk": start_chunk,
         "max_chunks": max_chunks,
-        "resume_used": resume,
+        "resume_used": effective_resume,
+        "canonical_changed": canonical_changed,
         "max_workers": max(1, max_workers),
         "raw_claim_count": len(persisted_raw_claims),
         "validated_claim_count": len(validated_claims),

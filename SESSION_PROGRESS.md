@@ -97,15 +97,21 @@ Read this after `AGENTS.md` and `WORKSPACE_INDEX.md` when starting a new session
   - low-quality table-heavy regions are now deferred with `defer_table_review` rather than forced into canonical prose
   - live rerun on `DOWNS` now reports `19` sections, `277` block alignments, `27` deferred table regions, and `70` review candidates
   - current limitation: `canonical.cleaned.md` is cleaner around deferred tables, but front-matter and some low-confidence prose conflicts still need another cleanup pass before it is clearly chunk-ready for full live Gemini extraction
+- Two-stage Gemini repair pipeline landed on 2026-05-15:
+  - new `tep_pdf_kg\gemini_repair.py` adds selective per-candidate Gemini repair over `fusion\review_candidates.jsonl`
+  - repair checkpointing now writes `fusion_repair\candidate_*.json` plus append-only `fusion_repair_status.jsonl`
+  - merge step now rebuilds `fusion\canonical.repaired.md` and `fusion\canonical.repaired.report.json` from deterministic fusion plus succeeded repair artifacts
+  - new `scripts\run_tep_pdf_md_repair.py` provides standalone repair execution with `--resume`, candidate bounds, worker bounds, and model override
+  - KG pipeline now automatically prefers `fusion\canonical.repaired.md` for chunking when present and invalidates old chunk-extraction checkpoints if the canonical markdown source changes
 
 ## Open Items
 
-- Improve front-matter suppression and low-confidence prose handling in markdown fusion so `canonical.cleaned.md` becomes clearly chunk-ready on `DOWNS.pdf`.
 - Fix or triage the pre-existing `/diagnose` rate-limit regression in `tests/test_hardening.py::test_rate_limit_blocks_after_threshold`.
 - Re-run live diagnosis evaluation items `gq10-12`; they were not yet revalidated live after the workflow hardening.
 - Decide whether to further clean old commented legacy code blocks in `delegate_tools.py` and `router.py` now that the contract path is in place.
 - Tune batch sizing / worker defaults for real Gemini runs now that checkpointed resume and parallel chunk execution exist operationally.
+- Run a live `DOWNS` selective repair pass to confirm `canonical.repaired.md` materially improves chunk-ready text and downstream Gemini extraction yield.
 
 ## Next Recommended Step
 
-1. Clean up `DOWNS` front matter and remaining low-confidence prose conflicts in markdown fusion, then switch a pilot chunking run to `fusion\canonical.cleaned.md` for comparison against the raw ODL canonical markdown.
+1. Run `scripts\run_tep_pdf_md_repair.py` on `DOWNS.pdf`, inspect `fusion\canonical.repaired.md`, then run a checkpointed Gemini extraction pass to compare repaired-markdown chunking against the prior raw canonical baseline.

@@ -417,6 +417,7 @@ def _row_from_decision(
     block_type = odl_block.block_type if odl_block is not None else (docling_block.block_type if docling_block is not None else "garbage")
     review_required = repair_candidate or decision_type.startswith("review_required")
     return {
+        "candidate_id": None,
         "section_id": section.section_id,
         "heading": section.heading,
         "order": round(order, 3),
@@ -435,6 +436,17 @@ def _row_from_decision(
         "defer_reason": defer_reason,
         "rule_tag": decision_type,
     }
+
+
+def _assign_candidate_ids(alignments: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    candidate_index = 0
+    for row in alignments:
+        if row.get("repair_candidate"):
+            row["candidate_id"] = f"candidate_{candidate_index:04d}"
+            candidate_index += 1
+        else:
+            row["candidate_id"] = None
+    return alignments
 
 
 def _merge_section_blocks(base_section: MarkdownSection, secondary_section: MarkdownSection | None) -> list[dict[str, Any]]:
@@ -646,36 +658,70 @@ def _align_sections(base_sections: list[MarkdownSection], secondary_sections: li
     return sorted(alignments, key=lambda item: item["order"])
 
 
-def _render_canonical_markdown(alignments: list[dict[str, Any]]) -> str:
+def _should_render_base_text(row: dict[str, Any]) -> bool:
+    chosen_text = str(row.get("chosen_text", "")).strip()
+    if not chosen_text:
+        return False
+    if row.get("decision_type") in {"defer_table_review", "defer_formula_review", "review_required_conflict"}:
+        return False
+    if row.get("defer_reason") == "low_confidence_docling_override":
+        return False
+    if row.get("defer_reason") == "docling_only_prose":
+        if len(_token_set(chosen_text)) < 12 or not re.search(r"[.!?]", chosen_text):
+            return False
+    return True
+
+
+def _render_canonical_markdown(
+    alignments: list[dict[str, Any]],
+    repair_overrides: dict[str, dict[str, Any]] | None = None,
+) -> str:
+    repair_overrides = repair_overrides or {}
     lines: list[str] = []
     active_heading: str | None = None
     for row in alignments:
         heading = row["heading"]
         chosen_text = str(row["chosen_text"]).strip()
+        repaired_payload = repair_overrides.get(str(row.get("candidate_id") or ""))
         if row.get("suppressed") and not row.get("repair_candidate"):
             continue
-        should_render_text = bool(chosen_text)
-        if row.get("decision_type") in {"defer_table_review", "defer_formula_review", "review_required_conflict"}:
-            should_render_text = False
-        if row.get("defer_reason") == "low_confidence_docling_override":
-            should_render_text = False
-        if row.get("defer_reason") == "docling_only_prose":
-            if len(_token_set(chosen_text)) < 12 or not re.search(r"[.!?]", chosen_text):
+        should_render_text = _should_render_base_text(row)
+        show_review_comment = bool(row.get("repair_candidate"))
+        append_after = ""
+        if repaired_payload:
+            action = str(repaired_payload.get("action", "")).strip()
+            repaired_text = str(repaired_payload.get("repaired_text", "")).strip()
+            if action == "replace":
+                chosen_text = repaired_text
+                should_render_text = bool(repaired_text)
+                show_review_comment = False
+            elif action == "append_after":
+                append_after = repaired_text
+                show_review_comment = False if append_after else show_review_comment
+            elif action == "omit":
+                chosen_text = ""
                 should_render_text = False
+                append_after = ""
+                show_review_comment = False
+            elif action == "keep_deferred":
+                show_review_comment = True
         if heading and heading != "Document" and heading != active_heading:
             if lines and lines[-1] != "":
                 lines.append("")
             lines.append(f"## {heading}")
             lines.append("")
             active_heading = heading
-        if row.get("repair_candidate"):
+        if show_review_comment:
             reason = row.get("defer_reason") or row["decision_type"]
             lines.append(f"<!-- review_candidate: {row['section_id']} [{reason}] -->")
-            if not should_render_text:
+            if not should_render_text and not append_after:
                 lines.append("")
                 continue
         if should_render_text:
             lines.append(chosen_text)
+            lines.append("")
+        if append_after:
+            lines.append(append_after)
             lines.append("")
     return "\n".join(lines).strip() + "\n"
 
@@ -704,6 +750,7 @@ def fuse_markdown_outputs(
     base_sections = _split_sections(odl_preclean, base_parser)
     secondary_sections = _split_sections(docling_preclean, secondary_parser)
     alignments = _align_sections(base_sections, secondary_sections)
+    _assign_candidate_ids(alignments)
     canonical_md = _render_canonical_markdown(alignments)
     review_candidates = [row for row in alignments if row.get("repair_candidate")]
 
