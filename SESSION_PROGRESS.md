@@ -68,15 +68,24 @@ Read this after `AGENTS.md` and `WORKSPACE_INDEX.md` when starting a new session
   - local environment already has `opendataloader-pdf 2.4.3` and `OpenJDK 24.0.1`
   - real `opendataloader_pdf.convert(..., format="markdown,json")` succeeded on `TEP_docs\DOWNS.pdf` and emitted `artifacts\tep_pdf_kg_odl_check\DOWNS.md` plus `DOWNS.json`
   - sandbox note: the first in-sandbox run failed with `AccessDeniedException` on the Java security file under the local JDK path, while the same conversion succeeded when re-run outside the sandbox
+- Gemini extractor tolerance hardening passed on 2026-05-15:
+  - `tep_pdf_kg\gemini_extractor.py` now falls back from strict structured parsing to tolerant JSON extraction, keeps valid claims, and drops malformed partial items instead of aborting the whole document run
+  - `python -m py_compile tep_pdf_kg\gemini_extractor.py tests\test_tep_pdf_kg_pipeline.py`
+  - `pytest tests\test_tep_pdf_kg_pipeline.py -q --basetemp .\_pytest_tmp_gemini_tolerant2`
+- Live Gemini KG run status on 2026-05-15:
+  - full pipeline run with `.env`-loaded API key confirmed real `opendataloader-pdf` parser execution and real Gemini extraction calls
+  - pre-hardening failure mode: Gemini sometimes returned partially malformed structured claims, which previously crashed the run
+  - post-hardening failure mode: the full all-doc run no longer failed fast on malformed claim items, but the end-to-end Gemini pass still exceeded the command timeout when run monolithically
+  - partial live artifact note: `artifacts\tep_pdf_kg_gemini_live_full_retry2\DOWNS\claims.raw.jsonl` was populated during the live run, confirming chunk-level extraction progress before timeout
 
 ## Open Items
 
 - Run the parser-native pipeline against the pilot PDFs with live `opendataloader-pdf` and `Docling` installs, then inspect canonical Markdown quality before further prompt tuning.
-- Run `scripts/run_tep_pdf_kg_pipeline.py --extractor gemini` against the pilot PDFs with a real API key and compare claim yield/quality against the current heuristic baseline and reviewed-Markdown path.
+- Finish the live Gemini pipeline in bounded resume batches rather than a monolithic run, then compare claim yield/quality against the heuristic baseline and reviewed-Markdown path.
 - Fix or triage the pre-existing `/diagnose` rate-limit regression in `tests/test_hardening.py::test_rate_limit_blocks_after_threshold`.
 - Re-run live diagnosis evaluation items `gq10-12`; they were not yet revalidated live after the workflow hardening.
 - Decide whether to further clean old commented legacy code blocks in `delegate_tools.py` and `router.py` now that the contract path is in place.
 
 ## Next Recommended Step
 
-1. Run `scripts/run_tep_pdf_kg_pipeline.py --doc Decentralized_control_of_the_Tennessee_E.pdf --extractor gemini --start-chunk 0 --max-chunks <small batch>` with live native parsers enabled, inspect `canonical_document.md`, `claims.raw.jsonl`, and `claims.validated.jsonl`, then decide whether parser cleanup or Gemini prompt/schema tuning is the higher-leverage next step before Neo4j import.
+1. Implement proper checkpoint/resume for chunk extraction, then rerun the live Gemini KG pipeline in bounded batches per document so completed chunk claims are preserved and the remaining timeout problem is operational rather than semantic.

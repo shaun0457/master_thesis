@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from typing import Any, Callable
 
+from langchain_core.exceptions import OutputParserException
 from pydantic import BaseModel, Field
 
 from .schema import ALLOWED_ENTITY_LABELS, ALLOWED_RELATIONS, CLAIM_TYPES
@@ -22,6 +23,63 @@ class ExtractedClaim(BaseModel):
 
 class ExtractedClaimBatch(BaseModel):
     claims: list[ExtractedClaim] = []
+
+
+def _extract_json_payload(text: str) -> Any:
+    text = (text or "").strip()
+    if not text:
+        return {"claims": []}
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        pass
+
+    if "```" in text:
+        for block in text.split("```"):
+            candidate = block.strip()
+            if candidate.lower().startswith("json"):
+                candidate = candidate[4:].strip()
+            if not candidate:
+                continue
+            try:
+                return json.loads(candidate)
+            except json.JSONDecodeError:
+                continue
+
+    start_positions = [idx for idx in (text.find("{"), text.find("[")) if idx != -1]
+    if not start_positions:
+        return {"claims": []}
+    start = min(start_positions)
+    for end in range(len(text), start, -1):
+        candidate = text[start:end].strip()
+        if not candidate:
+            continue
+        try:
+            return json.loads(candidate)
+        except json.JSONDecodeError:
+            continue
+    return {"claims": []}
+
+
+def _coerce_claim_batch(payload: Any) -> list[dict[str, Any]]:
+    if isinstance(payload, str):
+        payload = _extract_json_payload(payload)
+    if isinstance(payload, dict):
+        claims = payload.get("claims", [])
+    elif isinstance(payload, list):
+        claims = payload
+    else:
+        claims = []
+
+    accepted: list[dict[str, Any]] = []
+    for raw in claims:
+        if not isinstance(raw, dict):
+            continue
+        try:
+            accepted.append(ExtractedClaim.model_validate(raw).model_dump())
+        except Exception:
+            continue
+    return accepted
 
 
 def _prompt_from_payload(payload: dict[str, Any]) -> str:
@@ -57,9 +115,19 @@ def build_gemini_extractor(model: str | None = None, temperature: float | None =
 
         def extractor(payload: dict[str, Any]) -> list[dict[str, Any]]:
             prompt = _prompt_from_payload(payload)
-            result = invoke_with_retry(structured.invoke, prompt)
-            claims = getattr(result, "claims", []) or []
-            return [claim.model_dump() for claim in claims]
+            try:
+                result = invoke_with_retry(structured.invoke, prompt)
+                claims = getattr(result, "claims", []) or []
+                return [claim.model_dump() for claim in claims]
+            except OutputParserException:
+                raw_prompt = (
+                    prompt
+                    + "\nReturn JSON with shape: "
+                    + '{"claims":[{"subject":"","subject_label":"","predicate":"","object":"","object_label":"","claim_type":"","evidence_text":"","extraction_confidence":0.0,"review_status":"pending"}]}'
+                )
+                raw_result = invoke_with_retry(active_llm.invoke, raw_prompt)
+                content = getattr(raw_result, "content", "")
+                return _coerce_claim_batch(content)
 
         return extractor
 
@@ -71,8 +139,6 @@ def build_gemini_extractor(model: str | None = None, temperature: float | None =
         )
         result = invoke_with_retry(active_llm.invoke, prompt)
         content = getattr(result, "content", "")
-        parsed = json.loads(content)
-        batch = ExtractedClaimBatch.model_validate(parsed)
-        return [claim.model_dump() for claim in batch.claims]
+        return _coerce_claim_batch(content)
 
     return extractor
