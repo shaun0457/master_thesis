@@ -108,6 +108,11 @@ Read this after `AGENTS.md` and `WORKSPACE_INDEX.md` when starting a new session
   - non-sandbox resumed run reached real Gemini API calls successfully, then failed on `429 RESOURCE_EXHAUSTED` against `gemini-2.5-flash`
   - current partial artifacts under `artifacts\tep_pdf_kg_gemini_downs_checkpointed\DOWNS\fusion_repair\` show `candidate_0000` through `candidate_0004` persisted as failed attempts; no `canonical.repaired.md` has been produced yet because no candidate repair succeeded
   - practical blocker remains Gemini quota, now reproduced on both chunk claim extraction and the new repair stage
+- Gemini model-override fix and cheaper-model probe on 2026-05-15:
+  - `tep_pdf_kg\gemini_extractor.py` and `tep_pdf_kg\gemini_repair.py` now create a fresh `ChatGoogleGenerativeAI` client when `--gemini-model` is provided, instead of attempting `bind(model=...)`
+  - targeted tests now verify override behavior for both claim extraction and repair extraction
+  - live repair probe with `--gemini-model gemini-2.0-flash-lite --start-candidate 0 --max-candidates 1` confirmed the override is now real
+  - probe result: `gemini-2.0-flash-lite` returned `404 NOT_FOUND` with server message that the model is no longer available to new users, so it is not a viable fallback for this environment
 
 ## Open Items
 
@@ -117,7 +122,8 @@ Read this after `AGENTS.md` and `WORKSPACE_INDEX.md` when starting a new session
 - Tune batch sizing / worker defaults for real Gemini runs now that checkpointed resume and parallel chunk execution exist operationally.
 - Run a live `DOWNS` selective repair pass to confirm `canonical.repaired.md` materially improves chunk-ready text and downstream Gemini extraction yield.
 - Decide whether to switch live repair/extraction retries to a lower-quota-cost Gemini model or wait for quota reset before continuing the `DOWNS` markdown repair run.
+- Pick another currently available lower-cost Gemini model; `gemini-2.0-flash-lite` is no longer available for this account/environment.
 
 ## Next Recommended Step
 
-1. After Gemini quota resets or a cheaper model is selected, resume `scripts\run_tep_pdf_md_repair.py --resume` on `DOWNS.pdf` and only then compare repaired-markdown chunking against the prior raw canonical baseline.
+1. Select another available lower-cost Gemini model, run a one-candidate live repair probe first, and only then resume the broader `DOWNS` repair run if quota behavior improves.

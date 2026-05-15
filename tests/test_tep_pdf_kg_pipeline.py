@@ -498,7 +498,7 @@ def test_gemini_extractor_uses_structured_output(monkeypatch):
     monkeypatch.setattr(common, "llm", FakeLLM())
     monkeypatch.setattr(common, "invoke_with_retry", lambda fn, prompt: fn(prompt))
 
-    extractor = build_gemini_extractor(model="gemini-test")
+    extractor = build_gemini_extractor()
     claims = extractor(
         {
             "chunk": {
@@ -569,7 +569,7 @@ def test_gemini_extractor_drops_invalid_claims_after_structured_parse_failure(mo
     monkeypatch.setattr(common, "llm", FakeLLM())
     monkeypatch.setattr(common, "invoke_with_retry", lambda fn, prompt: fn(prompt))
 
-    extractor = build_gemini_extractor(model="gemini-test")
+    extractor = build_gemini_extractor()
     claims = extractor(
         {
             "chunk": {
@@ -618,7 +618,7 @@ def test_gemini_extractor_tolerates_fenced_json_fallback(monkeypatch):
     monkeypatch.setattr(common, "llm", FakeLLM())
     monkeypatch.setattr(common, "invoke_with_retry", lambda fn, prompt: fn(prompt))
 
-    extractor = build_gemini_extractor(model="gemini-test")
+    extractor = build_gemini_extractor()
     claims = extractor(
         {
             "chunk": {
@@ -633,4 +633,76 @@ def test_gemini_extractor_tolerates_fenced_json_fallback(monkeypatch):
     )
 
     assert len(claims) == 1
+    assert claims[0]["predicate"] == "CAUSES"
+
+
+def test_gemini_extractor_model_override_builds_new_client(monkeypatch):
+    import importlib
+    import langchain_google_genai
+
+    seen = {}
+
+    class FakeClaim:
+        def __init__(self, payload):
+            self._payload = payload
+
+        def model_dump(self):
+            return dict(self._payload)
+
+    class FakeBatch:
+        def __init__(self):
+            self.claims = [
+                FakeClaim(
+                    {
+                        "subject": "Fault 4",
+                        "subject_label": "Fault",
+                        "predicate": "CAUSES",
+                        "object": "High reactor temperature",
+                        "object_label": "Symptom",
+                        "claim_type": "diagnosis",
+                        "evidence_text": "Fault 4 causes high reactor temperature.",
+                        "extraction_confidence": 0.88,
+                        "review_status": "pending",
+                    }
+                )
+            ]
+
+    class FakeInvokeResult:
+        def __init__(self, content):
+            self.content = content
+
+    class FakeStructured:
+        def invoke(self, prompt):
+            return FakeBatch()
+
+    class FakeOverrideLLM:
+        def __init__(self, **kwargs):
+            seen["kwargs"] = kwargs
+
+        def with_structured_output(self, schema):
+            return FakeStructured()
+
+        def invoke(self, prompt):
+            return FakeInvokeResult("")
+
+    class FakeBaseLLM:
+        temperature = 0.25
+        max_output_tokens = 8192
+
+    monkeypatch.setenv("GOOGLE_API_KEY", "dummy-key-for-unit-test")
+    common = importlib.import_module("common")
+    monkeypatch.setattr(common, "llm", FakeBaseLLM())
+    monkeypatch.setattr(common, "invoke_with_retry", lambda fn, prompt: fn(prompt))
+    monkeypatch.setattr(langchain_google_genai, "ChatGoogleGenerativeAI", FakeOverrideLLM)
+
+    extractor = build_gemini_extractor(model="gemini-2.0-flash-lite")
+    claims = extractor(
+        {
+            "chunk": {"chunk_id": "c1", "text_md": "Fault 4 causes high reactor temperature.", "page_start": 1, "page_end": 1},
+            "document_metadata": {},
+            "allowed_relations": ["CAUSES"],
+        }
+    )
+
+    assert seen["kwargs"]["model"] == "gemini-2.0-flash-lite"
     assert claims[0]["predicate"] == "CAUSES"

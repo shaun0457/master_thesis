@@ -217,12 +217,18 @@ def _coerce_repair_decision(payload: Any) -> dict[str, Any]:
 
 
 def build_gemini_repair_extractor(model: str | None = None, temperature: float | None = 0.0) -> Callable[[dict[str, Any]], dict[str, Any]]:
+    from langchain_google_genai import ChatGoogleGenerativeAI
+
     from common import invoke_with_retry, llm
 
     active_llm = llm
-    if model and hasattr(active_llm, "bind"):
-        active_llm = active_llm.bind(model=model)
-    if temperature is not None and hasattr(active_llm, "bind"):
+    if model:
+        active_llm = ChatGoogleGenerativeAI(
+            model=model,
+            temperature=temperature if temperature is not None else getattr(llm, "temperature", 0.0),
+            max_output_tokens=getattr(llm, "max_output_tokens", 8192),
+        )
+    elif temperature is not None and hasattr(active_llm, "bind"):
         active_llm = active_llm.bind(temperature=temperature)
 
     if hasattr(active_llm, "with_structured_output"):

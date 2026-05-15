@@ -286,7 +286,7 @@ def test_gemini_repair_extractor_uses_structured_output(monkeypatch):
     monkeypatch.setattr(common, "llm", FakeLLM())
     monkeypatch.setattr(common, "invoke_with_retry", lambda fn, prompt: fn(prompt))
 
-    extractor = build_gemini_repair_extractor(model="gemini-test")
+    extractor = build_gemini_repair_extractor()
     decision = extractor(
         {
             "candidate": {
@@ -308,3 +308,66 @@ def test_gemini_repair_extractor_uses_structured_output(monkeypatch):
     assert decision["candidate_id"] == "candidate_0000"
     assert isinstance(seen_prompt["value"], list)
     assert len(seen_prompt["value"]) == 2
+
+
+def test_gemini_repair_extractor_model_override_builds_new_client(monkeypatch):
+    import importlib
+    import langchain_google_genai
+
+    seen = {}
+
+    class FakeDecision:
+        def model_dump(self):
+            return {
+                "candidate_id": "candidate_0000",
+                "action": "replace",
+                "repaired_text": "Clean repaired prose.",
+                "content_type": "prose",
+                "confidence": 0.92,
+                "notes": "Grounded in parser text.",
+            }
+
+    class FakeStructured:
+        def invoke(self, prompt):
+            return FakeDecision()
+
+    class FakeOverrideLLM:
+        def __init__(self, **kwargs):
+            seen["kwargs"] = kwargs
+
+        def with_structured_output(self, schema):
+            return FakeStructured()
+
+        def invoke(self, prompt):
+            return FakeDecision()
+
+    class FakeBaseLLM:
+        temperature = 0.25
+        max_output_tokens = 8192
+
+    monkeypatch.setenv("GOOGLE_API_KEY", "dummy-key-for-unit-test")
+    common = importlib.import_module("common")
+    monkeypatch.setattr(common, "llm", FakeBaseLLM())
+    monkeypatch.setattr(common, "invoke_with_retry", lambda fn, prompt: fn(prompt))
+    monkeypatch.setattr(langchain_google_genai, "ChatGoogleGenerativeAI", FakeOverrideLLM)
+
+    extractor = build_gemini_repair_extractor(model="gemini-2.0-flash-lite")
+    decision = extractor(
+        {
+            "candidate": {
+                "candidate_id": "candidate_0000",
+                "decision_type": "docling_only_prose",
+                "defer_reason": "docling_only_prose",
+                "heading": "Introduction",
+                "section_id": "section_0001_intro",
+                "block_type": "prose",
+                "odl_text": "",
+                "docling_text": "Clean repaired prose.",
+                "chosen_text": "",
+            },
+            "local_context": {"previous_accepted_prose": "", "next_accepted_prose": ""},
+        }
+    )
+
+    assert seen["kwargs"]["model"] == "gemini-2.0-flash-lite"
+    assert decision["action"] == "replace"
