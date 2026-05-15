@@ -6,7 +6,7 @@ from pathlib import Path
 from unittest.mock import MagicMock
 
 from tep_pdf_kg.chunking import build_chunks
-from tep_pdf_kg.extraction import extract_claims
+from tep_pdf_kg.extraction import build_slim_document_metadata, extract_claims
 from tep_pdf_kg.gemini_extractor import build_gemini_extractor
 from tep_pdf_kg.neo4j_import import claim_queries, chunk_document_queries, schema_queries
 from tep_pdf_kg.pipeline import run_document_pipeline
@@ -96,6 +96,26 @@ def test_extract_validate_and_prepare_claim_queries():
     assert queries
     assert all("source_chunk_id" not in params for _, params in queries)
     assert all("MERGE (c:Chunk {chunk_id: $chunk_id})" in query for query, _ in queries)
+
+
+def test_slim_document_metadata_excludes_full_parser_json():
+    chunk = build_chunks(_sample_document(), min_chars=10, max_chars=1000)[0]
+    metadata = {
+        "doc_id": "DOWNS.pdf",
+        "title": "DOWNS",
+        "parser_used": "opendataloader-pdf",
+        "canonical_source": "parser_markdown",
+        "provenance_quality": "native",
+        "parser_json": _sample_parser_json(),
+        "document_json_path": "x.json",
+    }
+
+    slim = build_slim_document_metadata(metadata, chunk)
+
+    assert "parser_json" not in slim
+    assert slim["doc_id"] == "DOWNS.pdf"
+    assert slim["chunk_context"]["chunk_id"] == chunk.chunk_id
+    assert slim["chunk_context"]["element_ref_count"] == len(chunk.element_refs)
 
 
 def test_schema_and_chunk_document_queries_cover_v1_entities():
@@ -332,6 +352,8 @@ def test_pipeline_parallel_merge_preserves_chunk_order(tmp_path: Path, monkeypat
 def test_gemini_extractor_uses_structured_output(monkeypatch):
     import importlib
 
+    seen_prompt = {}
+
     class FakeClaim:
         def __init__(self, payload):
             self._payload = payload
@@ -359,6 +381,7 @@ def test_gemini_extractor_uses_structured_output(monkeypatch):
 
     class FakeStructured:
         def invoke(self, prompt):
+            seen_prompt["value"] = prompt
             return FakeBatch()
 
     class FakeLLM:
@@ -390,6 +413,9 @@ def test_gemini_extractor_uses_structured_output(monkeypatch):
     assert claims
     assert claims[0]["predicate"] == "CAUSES"
     assert claims[0]["subject_label"] == "Fault"
+    assert isinstance(seen_prompt["value"], list)
+    assert len(seen_prompt["value"]) == 2
+    assert "parser_json" not in str(seen_prompt["value"][1].content)
 
 
 def test_gemini_extractor_drops_invalid_claims_after_structured_parse_failure(monkeypatch):

@@ -63,10 +63,43 @@ _RELATION_TO_CLAIM_TYPE = {
     "HAS_RISK": "risk",
 }
 
+_DOCUMENT_METADATA_KEYS = {
+    "doc_id",
+    "title",
+    "parser_used",
+    "canonical_source",
+    "provenance_quality",
+    "parser_candidates",
+}
+
+_CHUNK_METADATA_KEYS = {
+    "chunk_id",
+    "chunk_index",
+    "section_title",
+    "heading_path",
+    "page_start",
+    "page_end",
+    "parser_used",
+    "review_status",
+}
+
 
 def _canonicalize_text(text: str) -> str:
     value = " ".join(text.replace("_", " ").split()).strip(" .;:,")
     return value
+
+
+def build_slim_document_metadata(document_metadata: dict[str, Any] | None, chunk: ChunkRecord) -> dict[str, Any]:
+    metadata = document_metadata or {}
+    slim = {key: metadata[key] for key in _DOCUMENT_METADATA_KEYS if key in metadata}
+    slim.setdefault("parser_used", chunk.parser_used)
+    chunk_context = {key: getattr(chunk, key) for key in _CHUNK_METADATA_KEYS if hasattr(chunk, key)}
+    chunk_context["has_bbox"] = chunk.bbox is not None
+    chunk_context["element_ref_count"] = len(chunk.element_refs)
+    if chunk.metadata and "provenance_quality" in chunk.metadata:
+        chunk_context["provenance_quality"] = chunk.metadata["provenance_quality"]
+    slim["chunk_context"] = chunk_context
+    return slim
 
 
 def _claim_from_match(chunk: ChunkRecord, predicate: str, subject_label: str, object_label: str, subject: str, obj: str) -> ClaimRecord:
@@ -165,7 +198,7 @@ def extract_claims(
         return _heuristic_extract(chunk)
     payload = {
         "chunk": chunk.to_dict(),
-        "document_metadata": document_metadata or {},
+        "document_metadata": build_slim_document_metadata(document_metadata, chunk),
         "task": "Extract semantic TEP claims into the controlled schema.",
         "allowed_relations": sorted(_RELATION_TO_CLAIM_TYPE),
     }

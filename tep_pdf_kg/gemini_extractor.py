@@ -4,6 +4,7 @@ import json
 from typing import Any, Callable
 
 from langchain_core.exceptions import OutputParserException
+from langchain_core.messages import HumanMessage, SystemMessage
 from pydantic import BaseModel, Field
 
 from .schema import ALLOWED_ENTITY_LABELS, ALLOWED_RELATIONS, CLAIM_TYPES
@@ -82,15 +83,21 @@ def _coerce_claim_batch(payload: Any) -> list[dict[str, Any]]:
     return accepted
 
 
-def _prompt_from_payload(payload: dict[str, Any]) -> str:
+def _system_prompt() -> str:
+    return (
+        "You are a Tennessee Eastman Process knowledge graph extractor.\n"
+        "Extract only claims explicitly supported by the provided chunk.\n"
+        "Use only the allowed entity labels, relation labels, and claim types.\n"
+        "Do not infer beyond the chunk. Prefer omission over guessing.\n"
+        "Keep evidence_text short and verbatim.\n"
+    )
+
+
+def _user_prompt_from_payload(payload: dict[str, Any]) -> str:
     chunk = payload.get("chunk") or {}
     metadata = payload.get("document_metadata") or {}
     allowed_relations = payload.get("allowed_relations") or sorted(ALLOWED_RELATIONS)
     return (
-        "You extract semantic claims from Tennessee Eastman Process documents.\n"
-        "Return only claims grounded in the provided chunk.\n"
-        "Use only the allowed entity labels, relation labels, and claim types.\n"
-        "Prefer omission over guessing. Keep evidence_text short and verbatim.\n\n"
         f"Allowed entity labels: {sorted(ALLOWED_ENTITY_LABELS)}\n"
         f"Allowed relation labels: {allowed_relations}\n"
         f"Allowed claim types: {sorted(CLAIM_TYPES)}\n\n"
@@ -99,6 +106,19 @@ def _prompt_from_payload(payload: dict[str, Any]) -> str:
         "Chunk:\n"
         f"{json.dumps(chunk, ensure_ascii=False, indent=2)}\n"
     )
+
+
+def _messages_from_payload(payload: dict[str, Any], *, require_json_shape: bool) -> list[Any]:
+    user_prompt = _user_prompt_from_payload(payload)
+    if require_json_shape:
+        user_prompt += (
+            "\nReturn JSON with shape: "
+            + '{"claims":[{"subject":"","subject_label":"","predicate":"","object":"","object_label":"","claim_type":"","evidence_text":"","extraction_confidence":0.0,"review_status":"pending"}]}'
+        )
+    return [
+        SystemMessage(content=_system_prompt()),
+        HumanMessage(content=user_prompt),
+    ]
 
 
 def build_gemini_extractor(model: str | None = None, temperature: float | None = 0.0) -> Callable[[dict[str, Any]], Any]:
@@ -114,30 +134,20 @@ def build_gemini_extractor(model: str | None = None, temperature: float | None =
         structured = active_llm.with_structured_output(ExtractedClaimBatch)
 
         def extractor(payload: dict[str, Any]) -> list[dict[str, Any]]:
-            prompt = _prompt_from_payload(payload)
+            messages = _messages_from_payload(payload, require_json_shape=False)
             try:
-                result = invoke_with_retry(structured.invoke, prompt)
+                result = invoke_with_retry(structured.invoke, messages)
                 claims = getattr(result, "claims", []) or []
                 return [claim.model_dump() for claim in claims]
             except OutputParserException:
-                raw_prompt = (
-                    prompt
-                    + "\nReturn JSON with shape: "
-                    + '{"claims":[{"subject":"","subject_label":"","predicate":"","object":"","object_label":"","claim_type":"","evidence_text":"","extraction_confidence":0.0,"review_status":"pending"}]}'
-                )
-                raw_result = invoke_with_retry(active_llm.invoke, raw_prompt)
+                raw_result = invoke_with_retry(active_llm.invoke, _messages_from_payload(payload, require_json_shape=True))
                 content = getattr(raw_result, "content", "")
                 return _coerce_claim_batch(content)
 
         return extractor
 
     def extractor(payload: dict[str, Any]) -> list[dict[str, Any]]:
-        prompt = (
-            _prompt_from_payload(payload)
-            + "\nReturn JSON with shape: "
-            + '{"claims":[{"subject":"","subject_label":"","predicate":"","object":"","object_label":"","claim_type":"","evidence_text":"","extraction_confidence":0.0,"review_status":"pending"}]}'
-        )
-        result = invoke_with_retry(active_llm.invoke, prompt)
+        result = invoke_with_retry(active_llm.invoke, _messages_from_payload(payload, require_json_shape=True))
         content = getattr(result, "content", "")
         return _coerce_claim_batch(content)
 

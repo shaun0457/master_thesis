@@ -228,7 +228,7 @@ def _chunk_claim_dir(output_dir: Path) -> Path:
 
 
 def _chunk_claim_path(output_dir: Path, chunk: ChunkRecord) -> Path:
-    return _chunk_claim_dir(output_dir) / f"{chunk.chunk_id}.json"
+    return _chunk_claim_dir(output_dir) / f"chunk_{chunk.chunk_index:04d}.json"
 
 
 def _latest_status_by_chunk(output_dir: Path) -> dict[str, dict[str, Any]]:
