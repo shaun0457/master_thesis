@@ -15,7 +15,12 @@ Read this after `AGENTS.md` and `WORKSPACE_INDEX.md` when starting a new session
   - LLM fallback confidence now defaults to `0.7`; validator threshold remains `0.55`
   - schema/import/validation now support `Capability`, `HAS_CAPABILITY`, and claim type `capability`
   - relation-role mismatches are now rejected during validation
-- `DOWNS.pdf` remains the hardest pilot document because of noisy front-matter, inventory language, and repaired-markdown complexity, so the next KG probe should use `Decentralized_control_of_the_Tennessee_E.pdf` first.
+- `Decentralized_control_of_the_Tennessee_E.pdf` is now the active easier pilot:
+  - real parser-native markdown conversion completed under `artifacts\tep_pdf_kg_decentralized_probe\Decentralized_control_of_the_Tennessee_E\`
+  - fusion completed with `65` review candidates
+  - a bounded Gemini repair probe (`10` candidates on `gemini-2.5-flash-lite`) succeeded with `8 replace`, `2 keep_deferred`
+  - a bounded live Gemini claim-extraction probe over the first `3` chunks succeeded on the repaired-markdown path with `2` raw claims, `2` validated claims, and `0` rejected claims
+- `DOWNS.pdf` still remains the harder pilot because of noisy front-matter, inventory language, quota pressure, and repaired-markdown complexity.
 
 ## Verification
 
@@ -30,16 +35,22 @@ Read this after `AGENTS.md` and `WORKSPACE_INDEX.md` when starting a new session
 - Live environment facts already confirmed on 2026-05-15:
   - `opendataloader-pdf` and Java work locally for real markdown conversion
   - Gemini live runs are functional but constrained by quota / sandbox network restrictions depending on execution mode
+- Decentralized staged probe passed on 2026-05-16:
+  - parser-native conversion required running outside the sandbox for the ODL Java/JDK access path
+  - `docling` completed after setting `KMP_DUPLICATE_LIB_OK=TRUE`
+  - live pipeline probe used `canonical_source = fusion_repaired_markdown` and produced `144` chunks total, with the first `3` chunks processed successfully
+  - semantic quality note: the first validated claims were schema-valid but still abstract (`ControlAction SUBJECT_TO Constraint`, `ControlAction HAS_RISK Risk`) rather than the more concrete fault/sensor/unit claims desired for downstream KG utility
 
 ## Open Items
 
 - Fix or triage the pre-existing `/diagnose` rate-limit regression.
-- Run a staged KG attempt on `Decentralized_control_of_the_Tennessee_E.pdf` before returning to `DOWNS.pdf`.
+- Decide whether to continue `Decentralized_control_of_the_Tennessee_E.pdf` by probing later chunks first, or to tighten prompt/validation further so abstract control-strategy prose in the introduction does not dominate validated output.
 - Decide whether broader `DOWNS` repair/extraction should wait for quota reset or continue in small bounded `gemini-2.5-flash-lite` batches.
+- Continue broader repair on the remaining `55` pending fusion candidates if cleaner chunking becomes necessary.
 - Further tighten `prose_conflict` handling if repaired markdown from the easier pilot still contains hybrid fragments.
 
 ## Next Recommended Step
 
-1. Run markdown conversion for `Decentralized_control_of_the_Tennessee_E.pdf` to produce parser-native markdown/json artifacts.
-2. Run markdown fusion plus Gemini repair on that document and inspect whether the repaired canonical markdown is chunk-ready.
-3. Only then run a small live Gemini claim-extraction probe on `Decentralized_control_of_the_Tennessee_E.pdf` with `gemini-2.5-flash-lite`.
+1. Continue the `Decentralized_control_of_the_Tennessee_E.pdf` live claim-extraction probe on later chunks beyond the introduction, because the first `3` chunks ran successfully but mostly yielded abstract control-strategy claims.
+2. If later chunks still skew abstract, tighten Gemini prompt guidance and/or validation semantics for generic `ControlAction -> Constraint/Risk` claims before scaling the probe wider.
+3. Return to `DOWNS.pdf` only after the easier pilot shows a more useful validated-claim profile.
