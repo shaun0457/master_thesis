@@ -5,15 +5,11 @@ Read this after `AGENTS.md` and `WORKSPACE_INDEX.md` when starting a new session
 ## Current Status
 
 - Diagnosis pipeline is shipped and recently hardened.
-- Neo4j-first TEP PDF KG v1 scaffolding landed on 2026-05-15:
-  - new `tep_pdf_kg/` ingestion package now persists parser reports, normalized documents, chunks, raw claims, validated claims, and rejected claims per document
-  - pilot runner `scripts/run_tep_pdf_kg_pipeline.py` supports the 2 target PDFs, optional Neo4j import, and selectable claim extraction mode
-  - parser stage was refactored on 2026-05-15 to be parser-native and Markdown-first: `opendataloader-pdf` now serves as the default canonical parser target, `Docling` remains the comparison/fallback path, and per-parser `document.md` / `document.json` / `parser_report.json` artifacts are emitted as the real handoff surface
-  - canonical ingestion now selects parser-native Markdown as the semantic source of truth, supports reviewed Markdown override, and carries parser JSON forward as provenance metadata
-  - chunking now reads canonical Markdown directly, preserves heading-aware chunk order, and attaches best-effort parser provenance (`page_start/page_end`, heading path, element refs, bbox when available)
-  - pipeline extraction defaults are now Gemini-first with resumable chunk windows via `--start-chunk`, `--max-chunks`, and append-friendly raw claim writing
-  - `neo4j_kg.py` now exposes richer fault graph context (`symptoms`, `affected_units`, `suggested_actions`, `constraints`, `risks`) while preserving local fallback behavior
-  - `tep_pdf_kg/gemini_extractor.py` continues to support structured `chunk -> claims` extraction, while heuristic extraction remains as fallback/test mode rather than the recommended primary path
+- Neo4j-first TEP PDF KG v1 is landed and operational:
+  - parser-native Markdown-first ingestion exists under `tep_pdf_kg/`
+  - chunk checkpointing and `--resume` are in place
+  - Gemini prompt slimming and structured-output fallback are in place
+  - standalone markdown fusion exists under `tep_pdf_kg/markdown_fusion.py`
 - Blackboard is unified on `bb_tools.py`; delegate blackboard tools and diagnosis flow now use the canonical registry.
 - MAS2 workflow control flow was hardened on 2026-05-14:
   - evidence checks now use the current `run_id`
@@ -87,7 +83,10 @@ Read this after `AGENTS.md` and `WORKSPACE_INDEX.md` when starting a new session
   - fresh checkpointed run at `artifacts\tep_pdf_kg_gemini_downs_checkpointed\DOWNS` completed parser/chunking successfully and persisted `canonical_document.md`, `chunks.jsonl`, `extract_status.jsonl`, and `chunk_claims\`
   - `DOWNS.pdf` produced `75` chunks; all `75` chunk extraction attempts failed with `429 RESOURCE_EXHAUSTED`
   - failure root cause was quota on `generativelanguage.googleapis.com/generate_content_paid_tier_input_token_count` for `gemini-2.5-flash`, not parser or checkpoint logic
-  - current prompt inefficiency: Gemini is still receiving full `document.metadata`, which includes full `parser_json` (~172k chars) on every chunk call; this is now the highest-leverage target before more live retries
+- Post-slimming live DOWNS retry on 2026-05-15:
+  - Gemini no longer receives full `parser_json`; it now reads slim metadata plus the chunk payload
+  - resume run with `--max-workers 1` partially succeeded: `4` chunks succeeded, `71` still failed on `429 RESOURCE_EXHAUSTED`
+  - current bottleneck is still Gemini per-minute input-token quota, not parser execution or checkpointing
 - Markdown fusion stage landed on 2026-05-15:
   - new deterministic `tep_pdf_kg\markdown_fusion.py` can preclean ODL/Docling markdown, align sections, and emit `fusion\canonical.cleaned.md`, `fusion_report.json`, and `alignment.jsonl`
   - new `scripts\run_tep_pdf_md_fusion.py` runs the fusion stage independently from the KG extraction pipeline
@@ -96,8 +95,6 @@ Read this after `AGENTS.md` and `WORKSPACE_INDEX.md` when starting a new session
 
 ## Open Items
 
-- Run the parser-native pipeline against the pilot PDFs with live `opendataloader-pdf` and `Docling` installs, then inspect canonical Markdown quality before further prompt tuning.
-- Slim Gemini document metadata so chunk extraction no longer sends full `parser_json` on every request, then rerun `DOWNS` with `--resume` and a low worker count.
 - Improve ODL/Docling section alignment and merge heuristics so `canonical.cleaned.md` becomes materially better than raw ODL markdown on noisy documents like `DOWNS.pdf`.
 - Fix or triage the pre-existing `/diagnose` rate-limit regression in `tests/test_hardening.py::test_rate_limit_blocks_after_threshold`.
 - Re-run live diagnosis evaluation items `gq10-12`; they were not yet revalidated live after the workflow hardening.
@@ -106,4 +103,4 @@ Read this after `AGENTS.md` and `WORKSPACE_INDEX.md` when starting a new session
 
 ## Next Recommended Step
 
-1. Improve the markdown fusion alignment rules on `DOWNS.pdf` first, then rerun chunking and Gemini extraction against `fusion\canonical.cleaned.md` instead of the current raw ODL-derived canonical markdown.
+1. Improve the markdown fusion alignment and merge heuristics on `DOWNS.pdf`, then rerun chunking and Gemini extraction against `fusion\canonical.cleaned.md` instead of the current raw ODL-derived canonical markdown.
