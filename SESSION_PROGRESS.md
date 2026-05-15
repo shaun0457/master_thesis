@@ -92,10 +92,15 @@ Read this after `AGENTS.md` and `WORKSPACE_INDEX.md` when starting a new session
   - new `scripts\run_tep_pdf_md_fusion.py` runs the fusion stage independently from the KG extraction pipeline
   - live `DOWNS` fusion run completed at `artifacts\tep_pdf_kg_gemini_downs_checkpointed\DOWNS\fusion`
   - current limitation: v1 fusion is conservative and still heavily favors ODL on `DOWNS`; section alignment quality is not yet strong enough to repair many noisy table/OCR regions from Docling
+- Markdown fusion v2 hardening landed on 2026-05-15:
+  - `tep_pdf_kg\markdown_fusion.py` is now block-aware instead of section-only and emits richer `alignment.jsonl` rows plus `review_candidates.jsonl`
+  - low-quality table-heavy regions are now deferred with `defer_table_review` rather than forced into canonical prose
+  - live rerun on `DOWNS` now reports `19` sections, `277` block alignments, `27` deferred table regions, and `70` review candidates
+  - current limitation: `canonical.cleaned.md` is cleaner around deferred tables, but front-matter and some low-confidence prose conflicts still need another cleanup pass before it is clearly chunk-ready for full live Gemini extraction
 
 ## Open Items
 
-- Improve ODL/Docling section alignment and merge heuristics so `canonical.cleaned.md` becomes materially better than raw ODL markdown on noisy documents like `DOWNS.pdf`.
+- Improve front-matter suppression and low-confidence prose handling in markdown fusion so `canonical.cleaned.md` becomes clearly chunk-ready on `DOWNS.pdf`.
 - Fix or triage the pre-existing `/diagnose` rate-limit regression in `tests/test_hardening.py::test_rate_limit_blocks_after_threshold`.
 - Re-run live diagnosis evaluation items `gq10-12`; they were not yet revalidated live after the workflow hardening.
 - Decide whether to further clean old commented legacy code blocks in `delegate_tools.py` and `router.py` now that the contract path is in place.
@@ -103,4 +108,4 @@ Read this after `AGENTS.md` and `WORKSPACE_INDEX.md` when starting a new session
 
 ## Next Recommended Step
 
-1. Improve the markdown fusion alignment and merge heuristics on `DOWNS.pdf`, then rerun chunking and Gemini extraction against `fusion\canonical.cleaned.md` instead of the current raw ODL-derived canonical markdown.
+1. Clean up `DOWNS` front matter and remaining low-confidence prose conflicts in markdown fusion, then switch a pilot chunking run to `fusion\canonical.cleaned.md` for comparison against the raw ODL canonical markdown.
