@@ -132,6 +132,12 @@ Read this after `AGENTS.md` and `WORKSPACE_INDEX.md` when starting a new session
   - `candidate_0012` is also a good outcome: the model chose `omit` instead of forcing short noisy fragments into markdown
   - `candidate_0010` is only a partial win: it still produced an awkward sentence fragment (`from there to a Mode 1 is the base case`), so the prompt is improved but conflict handling still needs stronger anti-fragment rules for mixed paragraph/list transitions
   - repaired merge is now materially different from `canonical.cleaned.md`, with `applied_repair_count: 10`, `replace: 5`, `keep_deferred: 4`, `omit: 1`
+- Prompt v2 tightening for paragraph/list hybrids on 2026-05-15:
+  - `tep_pdf_kg\gemini_repair.py` now explicitly prioritizes chunk readability over maximum token retention for `prose_conflict`
+  - `prose_conflict` guidance now treats process-flow prose, mode/list prose, captions, and headers as distinct discourse units that must not be merged
+  - prompt now explicitly flags dangling lead-ins such as `from there to a` as evidence of an incomplete side
+  - prompt now explicitly allows keeping only one coherent sub-paragraph instead of trying to preserve every fragment
+  - new regression test in `tests\test_tep_pdf_kg_fusion.py` covers the `candidate_0010`-style paragraph/list hybrid failure mode
 
 ## Open Items
 
@@ -148,4 +154,4 @@ Read this after `AGENTS.md` and `WORKSPACE_INDEX.md` when starting a new session
 
 ## Next Recommended Step
 
-1. Refine the `prose_conflict` prompt to reject paragraph/list hybrids like `candidate_0010`, then rerun a very small conflict batch to confirm cleaner replacements before scaling repair coverage further.
+1. Re-run `candidate_0010`-style `prose_conflict` cases on `gemini-2.5-flash-lite` after the v2 prompt tightening and confirm the model now prefers a single coherent sub-paragraph or a defer/omit outcome over awkward hybrids.

@@ -417,3 +417,30 @@ def test_repair_prompt_includes_prose_conflict_rules():
     assert "prose_conflict" in prompt
     assert "semantically complete" in prompt
     assert "Do not splice unrelated sentence fragments together" in prompt
+
+
+def test_repair_prompt_rejects_process_and_mode_hybrids():
+    prompt = _user_prompt_from_payload(
+        {
+            "candidate": {
+                "candidate_id": "candidate_0010",
+                "decision_type": "review_required_conflict",
+                "defer_reason": "prose_conflict",
+                "heading": "Process Description",
+                "section_id": "section_0003_process-description",
+                "block_type": "prose",
+                "odl_text": "products leave the reactor as vapors along with the Mode 1 is the base case.",
+                "docling_text": "The reactor product stream passes through a cooler for condensing the products and from there to a Mode 1 is the base case.",
+                "chosen_text": "The reactor product stream passes through a cooler for condensing the products and from there to a Mode 1 is the base case.",
+            },
+            "local_context": {
+                "previous_accepted_prose": "Previous process-flow paragraph.",
+                "next_accepted_prose": "Next process-flow paragraph.",
+            },
+        }
+    )
+
+    assert "Optimize for chunk readability over maximum information retention" in prompt
+    assert "different discourse units" in prompt
+    assert "from there to a" in prompt
+    assert "You may keep only one coherent sub-paragraph" in prompt

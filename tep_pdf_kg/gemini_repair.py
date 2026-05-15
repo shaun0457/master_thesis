@@ -195,7 +195,13 @@ def _candidate_guidance(payload: dict[str, Any]) -> str:
         return (
             "Candidate-specific rule for prose_conflict:\n"
             "- ODL and Docling disagree, so your job is to choose or reconstruct the smallest grounded prose block that reads as a coherent paragraph.\n"
+            "- Optimize for chunk readability over maximum information retention.\n"
             "- Prefer the version that is semantically complete, locally consistent with neighboring accepted prose, and least contaminated by table headers or OCR debris.\n"
+            "- Treat equipment/process-flow narration, mode/list descriptions, captions, and table/header material as different discourse units.\n"
+            "- Never merge two different discourse units into one repaired paragraph.\n"
+            "- If one side ends with a dangling connector or incomplete lead-in such as 'the', 'and', 'for', 'to', or 'from there to a', treat that side as incomplete.\n"
+            "- If the candidate mixes process-flow prose with mode/list prose such as 'Mode 1 is the base case', prefer only the complete standalone sub-paragraph or keep_deferred.\n"
+            "- You may keep only one coherent sub-paragraph from the evidence. You do not need to preserve every fragment.\n"
             "- Do not splice unrelated sentence fragments together just to make something longer.\n"
             "- If neither side supports a clean standalone prose block, return 'keep_deferred'.\n"
         )
@@ -226,6 +232,7 @@ def _system_prompt() -> str:
         "You repair parser-fused markdown for downstream chunking.\n"
         "Work only from the provided ODL text, Docling text, and local heading context.\n"
         "Your goal is to produce the smallest grounded markdown block that can be inserted directly into the canonical document.\n"
+        "Optimize for chunk readability and local coherence, not for preserving every possible token.\n"
         "Do not invent facts. Do not rewrite the whole document. Do not summarize unless the candidate is table-like or formula-like.\n"
         "Return one machine-safe action for the candidate only.\n"
         "Use 'replace' for a grounded repaired block that is complete enough to stand alone in markdown.\n"
@@ -233,6 +240,7 @@ def _system_prompt() -> str:
         "Use 'omit' only for obvious parser noise.\n"
         "Use 'keep_deferred' whenever the evidence is too fragmentary, contradictory, or noisy to produce a reliable standalone block.\n"
         "For prose candidates, prefer omission/defer over half-sentences, labels, column names, captions, affiliations, or OCR debris.\n"
+        "For mixed prose candidates, never join process narration with list-like or mode-like fragments unless the combined result is clearly a natural paragraph in the source evidence.\n"
         "You may correct obvious OCR typos, spacing, punctuation, and broken words, but only inside text already supported by the supplied parser evidence.\n"
         "If you choose 'replace', 'repaired_text' must be a complete readable sentence or paragraph, not a keyword fragment.\n"
     )
@@ -244,6 +252,8 @@ def _user_prompt_from_payload(payload: dict[str, Any]) -> str:
         "Local decision checklist:\n"
         "- Is the output a complete standalone prose block?\n"
         "- Is it grounded only in ODL/Docling text provided here?\n"
+        "- Does it avoid mixing different discourse units such as narrative prose and mode/list prose?\n"
+        "- Does it avoid dangling lead-ins like 'from there to a' or similar incomplete transitions?\n"
         "- Is it free of table headers, affiliation fragments, or parser junk?\n"
         "- If not, prefer keep_deferred.\n\n"
         "Repair candidate payload:\n"
