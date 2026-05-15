@@ -64,6 +64,10 @@ Read this after `AGENTS.md` and `WORKSPACE_INDEX.md` when starting a new session
   - `python -m py_compile tep_pdf_kg\schema.py tep_pdf_kg\parsers.py tep_pdf_kg\chunking.py tep_pdf_kg\pipeline.py scripts\run_tep_pdf_kg_pipeline.py tests\test_tep_pdf_kg_pipeline.py`
   - `pytest tests\test_tep_pdf_kg_pipeline.py tests\test_neo4j_kg.py tests\test_kg_match_fault.py -q --basetemp .\_pytest_tmp_tepkg_md_native`
   - current limitation: the refactor is unit/integration verified with mocked native parser entrypoints, but no in-session live `opendataloader-pdf` / `Docling` run was executed yet against the pilot PDFs
+- Live `opendataloader-pdf` environment check passed on 2026-05-15:
+  - local environment already has `opendataloader-pdf 2.4.3` and `OpenJDK 24.0.1`
+  - real `opendataloader_pdf.convert(..., format="markdown,json")` succeeded on `TEP_docs\DOWNS.pdf` and emitted `artifacts\tep_pdf_kg_odl_check\DOWNS.md` plus `DOWNS.json`
+  - sandbox note: the first in-sandbox run failed with `AccessDeniedException` on the Java security file under the local JDK path, while the same conversion succeeded when re-run outside the sandbox
 
 ## Open Items
 
