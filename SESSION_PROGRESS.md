@@ -83,11 +83,16 @@ Read this after `AGENTS.md` and `WORKSPACE_INDEX.md` when starting a new session
   - final `claims.raw.jsonl`, `claims.validated.jsonl`, and `claims.rejected.json` are now derived from succeeded chunk artifacts in chunk order during a separate merge/validate phase
   - `scripts\run_tep_pdf_kg_pipeline.py` now supports bounded parallel extraction via `--max-workers`; `--append-claims` remains only as deprecated compatibility for resume semantics
   - parser/chunking reuse on resume is now file-backed: if canonical markdown/json and `chunks.jsonl` already exist, the extraction retry path reuses them instead of re-running native parsers
+- Live DOWNS checkpointed Gemini run on 2026-05-15:
+  - fresh checkpointed run at `artifacts\tep_pdf_kg_gemini_downs_checkpointed\DOWNS` completed parser/chunking successfully and persisted `canonical_document.md`, `chunks.jsonl`, `extract_status.jsonl`, and `chunk_claims\`
+  - `DOWNS.pdf` produced `75` chunks; all `75` chunk extraction attempts failed with `429 RESOURCE_EXHAUSTED`
+  - failure root cause was quota on `generativelanguage.googleapis.com/generate_content_paid_tier_input_token_count` for `gemini-2.5-flash`, not parser or checkpoint logic
+  - current prompt inefficiency: Gemini is still receiving full `document.metadata`, which includes full `parser_json` (~172k chars) on every chunk call; this is now the highest-leverage target before more live retries
 
 ## Open Items
 
 - Run the parser-native pipeline against the pilot PDFs with live `opendataloader-pdf` and `Docling` installs, then inspect canonical Markdown quality before further prompt tuning.
-- Finish the live Gemini pipeline in bounded resume batches rather than a monolithic run, then compare claim yield/quality against the heuristic baseline and reviewed-Markdown path.
+- Slim Gemini document metadata so chunk extraction no longer sends full `parser_json` on every request, then rerun `DOWNS` with `--resume` and a low worker count.
 - Fix or triage the pre-existing `/diagnose` rate-limit regression in `tests/test_hardening.py::test_rate_limit_blocks_after_threshold`.
 - Re-run live diagnosis evaluation items `gq10-12`; they were not yet revalidated live after the workflow hardening.
 - Decide whether to further clean old commented legacy code blocks in `delegate_tools.py` and `router.py` now that the contract path is in place.
@@ -95,4 +100,4 @@ Read this after `AGENTS.md` and `WORKSPACE_INDEX.md` when starting a new session
 
 ## Next Recommended Step
 
-1. Rerun the live Gemini KG pipeline on one pilot PDF with `--resume --max-workers 4 --max-chunks <small batch>` first, inspect `extract_status.jsonl` and `chunk_claims/`, then tune worker count and batch size before attempting the second document.
+1. Reduce Gemini prompt size by removing full `parser_json` from the per-chunk `document_metadata` payload, keep only slim document/chunk provenance fields, then rerun `DOWNS.pdf` with `--resume --max-workers 1` to confirm quota pressure drops before attempting broader parallel retries.
