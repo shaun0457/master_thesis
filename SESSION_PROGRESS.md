@@ -113,6 +113,12 @@ Read this after `AGENTS.md` and `WORKSPACE_INDEX.md` when starting a new session
   - targeted tests now verify override behavior for both claim extraction and repair extraction
   - live repair probe with `--gemini-model gemini-2.0-flash-lite --start-candidate 0 --max-candidates 1` confirmed the override is now real
   - probe result: `gemini-2.0-flash-lite` returned `404 NOT_FOUND` with server message that the model is no longer available to new users, so it is not a viable fallback for this environment
+- Live `gemini-2.5-flash-lite` repair probe on 2026-05-15:
+  - one-candidate resumed repair probe on `DOWNS` succeeded for `candidate_0000`
+  - returned action was `keep_deferred` for the formula block, which is acceptable for this candidate class
+  - `fusion\canonical.repaired.report.json` now shows `applied_repair_count: 1`
+  - this is the first successful live repair candidate for `DOWNS`, so `gemini-2.5-flash-lite` is currently the best available fallback to continue probing
+  - artifact state still includes many historical `failed` and stale `running` rows from prior `gemini-2.5-flash` attempts, so broader resume results should be interpreted as mixed-history checkpoint state rather than a fresh clean run
 
 ## Open Items
 
@@ -123,7 +129,8 @@ Read this after `AGENTS.md` and `WORKSPACE_INDEX.md` when starting a new session
 - Run a live `DOWNS` selective repair pass to confirm `canonical.repaired.md` materially improves chunk-ready text and downstream Gemini extraction yield.
 - Decide whether to switch live repair/extraction retries to a lower-quota-cost Gemini model or wait for quota reset before continuing the `DOWNS` markdown repair run.
 - Pick another currently available lower-cost Gemini model; `gemini-2.0-flash-lite` is no longer available for this account/environment.
+- Decide whether to continue broader `DOWNS` repair on `gemini-2.5-flash-lite` in small bounded batches, or first reset/clean historical repair checkpoint state for a clearer run summary.
 
 ## Next Recommended Step
 
-1. Select another available lower-cost Gemini model, run a one-candidate live repair probe first, and only then resume the broader `DOWNS` repair run if quota behavior improves.
+1. Continue `DOWNS` repair on `gemini-2.5-flash-lite` with small bounded batches such as `--start-candidate 1 --max-candidates 3`, then inspect whether non-formula prose candidates also succeed before scaling further.
