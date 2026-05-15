@@ -170,7 +170,10 @@ Read this after `AGENTS.md` and `WORKSPACE_INDEX.md` when starting a new session
 - Re-run a small `prose_conflict` batch after the prompt hardening to see whether the new rules improve coherence beyond the already successful `docling_only_prose` repairs.
 - Tighten `prose_conflict` rules further for list-transition / heading-fragment cases like `candidate_0010`, where the current prompt still allows awkward stitched prose.
 - Decide whether to pivot the next live Gemini claim-extraction probe away from `DOWNS.pdf`, since `DOWNS` may be the hardest pilot document due to noisy front-matter/inventory language and repaired-markdown complexity.
+- Run the `Decentralized_control_of_the_Tennessee_E.pdf` path in staged order rather than jumping directly to live claim extraction: markdown conversion first, then Gemini merge/repair, then live Gemini claim extraction.
 
 ## Next Recommended Step
 
-1. Run a small live Gemini claim-extraction probe on `Decentralized_control_of_the_Tennessee_E.pdf` with `gemini-2.5-flash-lite` before returning to `DOWNS.pdf`, so the new capability/role-validation rules can be checked on an easier pilot document.
+1. Run markdown conversion for `Decentralized_control_of_the_Tennessee_E.pdf` first, so parser-native artifacts exist before any Gemini-dependent stages.
+2. Run Gemini merge/repair on the converted `Decentralized_control_of_the_Tennessee_E.pdf` markdown, and review whether the repaired canonical markdown is chunk-ready.
+3. Only after the repaired markdown looks usable, run a small live Gemini claim-extraction probe on `Decentralized_control_of_the_Tennessee_E.pdf` with `gemini-2.5-flash-lite`.
