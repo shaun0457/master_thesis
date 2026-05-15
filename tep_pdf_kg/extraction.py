@@ -7,6 +7,7 @@ from typing import Any, Callable
 from .schema import CLAIM_TYPES, ClaimRecord, ChunkRecord, utc_now_iso
 
 EXTRACTOR_VERSION = "tep-pdf-kg-v1"
+DEFAULT_LLM_EXTRACTION_CONFIDENCE = 0.7
 
 _PATTERNS: list[tuple[re.Pattern[str], str, str, str]] = [
     (
@@ -61,6 +62,7 @@ _RELATION_TO_CLAIM_TYPE = {
     "ACTS_ON": "action_target",
     "SUBJECT_TO": "constraint",
     "HAS_RISK": "risk",
+    "HAS_CAPABILITY": "capability",
 }
 
 _DOCUMENT_METADATA_KEYS = {
@@ -179,7 +181,7 @@ def _parse_llm_claims(payload: Any, chunk: ChunkRecord) -> list[ClaimRecord]:
                 page_end=chunk.page_end,
                 evidence_text=str(raw.get("evidence_text", "")).strip() or chunk.text_md[:400],
                 extractor_version=EXTRACTOR_VERSION,
-                extraction_confidence=float(raw.get("extraction_confidence", 0.5)),
+                extraction_confidence=float(raw.get("extraction_confidence", DEFAULT_LLM_EXTRACTION_CONFIDENCE)),
                 review_status=str(raw.get("review_status", "pending")),
                 extraction_timestamp=utc_now_iso(),
                 parser_used=chunk.parser_used,

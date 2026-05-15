@@ -10,6 +10,28 @@ from pydantic import BaseModel, Field
 from .llm_json import extract_json_payload
 from .schema import ALLOWED_ENTITY_LABELS, ALLOWED_RELATIONS, CLAIM_TYPES
 
+DEFAULT_EXTRACTION_CONFIDENCE = 0.7
+RELATION_ROLE_GUIDANCE = [
+    "OBSERVED_BY only when the subject is a Symptom and the object is a Sensor.",
+    "ACTS_ON only when the subject is a ControlAction and the object is an Actuator.",
+    "CAUSES should prefer Fault -> Symptom.",
+    "AFFECTS_UNIT should prefer Fault -> ProcessUnit.",
+    "SUGGESTS_ACTION only when the subject is a Fault and the object is a ControlAction.",
+    "SUBJECT_TO only when the subject is a ControlAction and the object is a Constraint.",
+    "HAS_RISK only when the subject is a ControlAction and the object is a Risk.",
+    "HAS_CAPABILITY only when the subject is a ProcessUnit and the object is a Capability.",
+]
+NEGATIVE_EXTRACTION_RULES = [
+    "Do not convert counts, inventories, configuration lists, section titles, or headings into fault or symptom claims.",
+    "Do not force capability or inventory text into ACTS_ON or OBSERVED_BY.",
+    "If the chunk only states what the process or unit has available, emit a capability claim or omit it.",
+]
+CONFIDENCE_CALIBRATION_RULES = [
+    "Use 0.80 or higher when the claim is explicit and semantically precise.",
+    "Use 0.65 to 0.79 when the claim is supported but needs light normalization or mapping.",
+    "Prefer omission over speculative claims. Do not default to 0.50 for uncertain items.",
+]
+
 
 class ExtractedClaim(BaseModel):
     subject: str = Field(..., min_length=1)
@@ -19,7 +41,7 @@ class ExtractedClaim(BaseModel):
     object_label: str
     claim_type: str
     evidence_text: str = Field("", min_length=0)
-    extraction_confidence: float = Field(0.5, ge=0.0, le=1.0)
+    extraction_confidence: float = Field(DEFAULT_EXTRACTION_CONFIDENCE, ge=0.0, le=1.0)
     review_status: str = "pending"
 
 
@@ -48,12 +70,21 @@ def _coerce_claim_batch(payload: Any) -> list[dict[str, Any]]:
 
 
 def _system_prompt() -> str:
+    relation_rules = "\n".join(f"- {rule}" for rule in RELATION_ROLE_GUIDANCE)
+    negative_rules = "\n".join(f"- {rule}" for rule in NEGATIVE_EXTRACTION_RULES)
+    confidence_rules = "\n".join(f"- {rule}" for rule in CONFIDENCE_CALIBRATION_RULES)
     return (
         "You are a Tennessee Eastman Process knowledge graph extractor.\n"
         "Extract only claims explicitly supported by the provided chunk.\n"
         "Use only the allowed entity labels, relation labels, and claim types.\n"
         "Do not infer beyond the chunk. Prefer omission over guessing.\n"
         "Keep evidence_text short and verbatim.\n"
+        "Relation-role rules:\n"
+        f"{relation_rules}\n"
+        "Negative rules:\n"
+        f"{negative_rules}\n"
+        "Confidence calibration:\n"
+        f"{confidence_rules}\n"
     )
 
 

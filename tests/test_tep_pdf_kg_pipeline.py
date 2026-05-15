@@ -6,11 +6,11 @@ from pathlib import Path
 from unittest.mock import MagicMock
 
 from tep_pdf_kg.chunking import build_chunks
-from tep_pdf_kg.extraction import build_slim_document_metadata, extract_claims
+from tep_pdf_kg.extraction import DEFAULT_LLM_EXTRACTION_CONFIDENCE, build_slim_document_metadata, extract_claims
 from tep_pdf_kg.gemini_extractor import build_gemini_extractor
 from tep_pdf_kg.neo4j_import import claim_queries, chunk_document_queries, schema_queries
 from tep_pdf_kg.pipeline import run_document_pipeline
-from tep_pdf_kg.schema import DocumentManifest, NormalizedDocument
+from tep_pdf_kg.schema import ClaimRecord, DocumentManifest, NormalizedDocument, utc_now_iso
 from tep_pdf_kg.validation import validate_claims
 
 
@@ -126,9 +126,123 @@ def test_schema_and_chunk_document_queries_cover_v1_entities():
     query_pairs = chunk_document_queries(document, chunks)
 
     assert any("fault_idv_number" in query for query in schema)
+    assert any("capability_name" in query for query in schema)
     assert any("Document" in query for query in schema)
     assert any("MERGE (d:Document" in query for query, _ in query_pairs)
     assert any("MERGE (c:Chunk" in query for query, _ in query_pairs)
+
+
+def test_extract_claims_llm_fallback_confidence_defaults_to_validation_aligned_value():
+    chunk = build_chunks(_sample_document(), min_chars=10, max_chars=1000)[0]
+
+    claims = extract_claims(
+        chunk,
+        extractor=lambda payload: [
+            {
+                "subject": "Fault 4",
+                "subject_label": "Fault",
+                "predicate": "CAUSES",
+                "object": "High reactor temperature",
+                "object_label": "Symptom",
+                "claim_type": "diagnosis",
+                "evidence_text": "Fault 4 causes high reactor temperature.",
+            }
+        ],
+    )
+
+    assert len(claims) == 1
+    assert claims[0].extraction_confidence == DEFAULT_LLM_EXTRACTION_CONFIDENCE
+
+
+def test_validate_claims_rejects_relation_role_mismatch():
+    claim = ClaimRecord(
+        claim_id="c1",
+        subject="Cooling water valve",
+        subject_label="Actuator",
+        predicate="OBSERVED_BY",
+        object="Reactor",
+        object_label="ProcessUnit",
+        claim_type="symptom_observation",
+        normalized_subject="cooling water valve",
+        normalized_object="reactor",
+        source_chunk_id="chunk-1",
+        source_doc="DOWNS.pdf",
+        page_start=1,
+        page_end=1,
+        evidence_text="Cooling water valve observed by reactor.",
+        extractor_version="tep-pdf-kg-v1",
+        extraction_confidence=0.9,
+        review_status="pending",
+        extraction_timestamp=utc_now_iso(),
+        parser_used="opendataloader-pdf",
+    )
+
+    validated, rejected = validate_claims([claim])
+
+    assert validated == []
+    assert len(rejected) == 1
+    assert any("relation-role mismatch" in error for error in rejected[0]["errors"])
+
+
+def test_validate_claims_accepts_capability_claim_and_import_query():
+    claim = ClaimRecord(
+        claim_id="c2",
+        subject="Tennessee Eastman process",
+        subject_label="ProcessUnit",
+        predicate="HAS_CAPABILITY",
+        object="12 valves available for manipulation",
+        object_label="Capability",
+        claim_type="capability",
+        normalized_subject="tennessee eastman process",
+        normalized_object="12 valves available for manipulation",
+        source_chunk_id="chunk-2",
+        source_doc="DOWNS.pdf",
+        page_start=1,
+        page_end=1,
+        evidence_text="The process has 12 valves available for manipulation.",
+        extractor_version="tep-pdf-kg-v1",
+        extraction_confidence=0.7,
+        review_status="pending",
+        extraction_timestamp=utc_now_iso(),
+        parser_used="opendataloader-pdf",
+    )
+
+    validated, rejected = validate_claims([claim])
+    queries = claim_queries(validated)
+
+    assert rejected == []
+    assert len(validated) == 1
+    assert len(queries) == 1
+    assert "HAS_CAPABILITY" in queries[0][0]
+
+
+def test_validate_claims_still_rejects_low_confidence():
+    claim = ClaimRecord(
+        claim_id="c3",
+        subject="Fault 4",
+        subject_label="Fault",
+        predicate="CAUSES",
+        object="High reactor temperature",
+        object_label="Symptom",
+        claim_type="diagnosis",
+        normalized_subject="fault 4",
+        normalized_object="high reactor temperature",
+        source_chunk_id="chunk-3",
+        source_doc="DOWNS.pdf",
+        page_start=1,
+        page_end=1,
+        evidence_text="Fault 4 causes high reactor temperature.",
+        extractor_version="tep-pdf-kg-v1",
+        extraction_confidence=0.4,
+        review_status="pending",
+        extraction_timestamp=utc_now_iso(),
+        parser_used="opendataloader-pdf",
+    )
+
+    validated, rejected = validate_claims([claim])
+
+    assert validated == []
+    assert any("confidence below threshold" in error for error in rejected[0]["errors"])
 
 
 def test_pipeline_writes_all_stage_artifacts_and_prefers_reviewed_markdown(tmp_path: Path, monkeypatch):
@@ -518,6 +632,8 @@ def test_gemini_extractor_uses_structured_output(monkeypatch):
     assert isinstance(seen_prompt["value"], list)
     assert len(seen_prompt["value"]) == 2
     assert "parser_json" not in str(seen_prompt["value"][1].content)
+    assert "HAS_CAPABILITY only when the subject is a ProcessUnit and the object is a Capability." in str(seen_prompt["value"][0].content)
+    assert "Do not force capability or inventory text into ACTS_ON or OBSERVED_BY." in str(seen_prompt["value"][0].content)
 
 
 def test_gemini_extractor_drops_invalid_claims_after_structured_parse_failure(monkeypatch):
@@ -636,6 +752,68 @@ def test_gemini_extractor_tolerates_fenced_json_fallback(monkeypatch):
     assert claims[0]["predicate"] == "CAUSES"
 
 
+def test_gemini_extractor_defaults_missing_confidence_after_structured_parse_failure(monkeypatch):
+    import importlib
+    from langchain_core.exceptions import OutputParserException
+
+    class FakeStructured:
+        def invoke(self, prompt):
+            raise OutputParserException("structured parse failed")
+
+    class FakeInvokeResult:
+        def __init__(self, content):
+            self.content = content
+
+    class FakeLLM:
+        def bind(self, **kwargs):
+            return self
+
+        def with_structured_output(self, schema):
+            return FakeStructured()
+
+        def invoke(self, prompt):
+            return FakeInvokeResult(
+                json.dumps(
+                    {
+                        "claims": [
+                            {
+                                "subject": "Fault 4",
+                                "subject_label": "Fault",
+                                "predicate": "CAUSES",
+                                "object": "High reactor temperature",
+                                "object_label": "Symptom",
+                                "claim_type": "diagnosis",
+                                "evidence_text": "Fault 4 causes high reactor temperature.",
+                                "review_status": "pending",
+                            }
+                        ]
+                    }
+                )
+            )
+
+    monkeypatch.setenv("GOOGLE_API_KEY", "dummy-key-for-unit-test")
+    common = importlib.import_module("common")
+    monkeypatch.setattr(common, "llm", FakeLLM())
+    monkeypatch.setattr(common, "invoke_with_retry", lambda fn, prompt: fn(prompt))
+
+    extractor = build_gemini_extractor()
+    claims = extractor(
+        {
+            "chunk": {
+                "chunk_id": "c1",
+                "text_md": "Fault 4 causes high reactor temperature.",
+                "page_start": 1,
+                "page_end": 1,
+            },
+            "document_metadata": {},
+            "allowed_relations": ["CAUSES"],
+        }
+    )
+
+    assert len(claims) == 1
+    assert claims[0]["extraction_confidence"] == DEFAULT_LLM_EXTRACTION_CONFIDENCE
+
+
 def test_gemini_extractor_model_override_builds_new_client(monkeypatch):
     import importlib
     import langchain_google_genai
@@ -706,3 +884,90 @@ def test_gemini_extractor_model_override_builds_new_client(monkeypatch):
 
     assert seen["kwargs"]["model"] == "gemini-2.0-flash-lite"
     assert claims[0]["predicate"] == "CAUSES"
+
+
+def test_pipeline_writes_capability_claims_and_rejects_relation_role_mismatch(tmp_path: Path, monkeypatch):
+    document = _sample_document()
+
+    def fake_run_parser(pdf_path, manifest, parser_name, output_dir):
+        Path(output_dir).mkdir(parents=True, exist_ok=True)
+        clone = NormalizedDocument(
+            doc_id=document.doc_id,
+            source_path=pdf_path,
+            parser_used=parser_name,
+            parser_status="ok",
+            selected_as_canonical=parser_name == manifest.preferred_parser,
+            title=document.title,
+            document_md=document.document_md,
+            sections=document.sections,
+            pages=document.pages,
+            metadata={
+                "parser_json": _sample_parser_json(),
+                "document_json_path": str(Path(output_dir) / "document.json"),
+                "document_markdown_path": str(Path(output_dir) / "document.md"),
+            },
+        )
+        return MagicMock(
+            parser_name=parser_name,
+            status="ok",
+            document=clone,
+            to_dict=lambda: {"parser_name": parser_name, "status": "ok", "document": clone.to_dict(), "warnings": [], "error": None},
+        )
+
+    def fake_extract(chunk, extractor=None, document_metadata=None):
+        return extract_claims(
+            chunk,
+            extractor=lambda payload: [
+                {
+                    "subject": "Tennessee Eastman process",
+                    "subject_label": "ProcessUnit",
+                    "predicate": "HAS_CAPABILITY",
+                    "object": "41 measurements available for monitoring or control",
+                    "object_label": "Capability",
+                    "claim_type": "capability",
+                    "evidence_text": "41 measurements available for monitoring or control.",
+                    "extraction_confidence": 0.74,
+                    "review_status": "pending",
+                },
+                {
+                    "subject": "xmeas_9",
+                    "subject_label": "Sensor",
+                    "predicate": "ACTS_ON",
+                    "object": "Reactor",
+                    "object_label": "ProcessUnit",
+                    "claim_type": "action_target",
+                    "evidence_text": "Bad relation-role mapping.",
+                    "extraction_confidence": 0.91,
+                    "review_status": "pending",
+                },
+            ],
+            document_metadata=document_metadata,
+        )
+
+    monkeypatch.setattr("tep_pdf_kg.pipeline.run_parser", fake_run_parser)
+    monkeypatch.setattr("tep_pdf_kg.pipeline.build_chunks", lambda doc: build_chunks(doc, min_chars=10, max_chars=1000)[:1])
+    monkeypatch.setattr("tep_pdf_kg.pipeline.extract_claims", fake_extract)
+    manifest = DocumentManifest(
+        doc_id="DOWNS.pdf",
+        pdf_path=str(tmp_path / "DOWNS.pdf"),
+        output_dir=str(tmp_path / "out"),
+    )
+    Path(manifest.pdf_path).write_bytes(b"%PDF-1.4\n")
+
+    summary = run_document_pipeline(manifest, max_workers=1)
+
+    out_dir = Path(summary["output_dir"])
+    validated = [
+        json.loads(line)
+        for line in (out_dir / "claims.validated.jsonl").read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    rejected = json.loads((out_dir / "claims.rejected.json").read_text(encoding="utf-8"))
+
+    assert summary["raw_claim_count"] == 2
+    assert summary["validated_claim_count"] == 1
+    assert summary["rejected_claim_count"] == 1
+    assert validated[0]["predicate"] == "HAS_CAPABILITY"
+    assert validated[0]["object_label"] == "Capability"
+    assert rejected[0]["claim"]["predicate"] == "ACTS_ON"
+    assert any("relation-role mismatch" in error for error in rejected[0]["errors"])

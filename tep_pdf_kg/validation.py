@@ -12,6 +12,17 @@ ENTITY_CANONICAL_MAP = {
     "stripper": "Stripper column",
 }
 
+RELATION_ROLE_RULES = {
+    "OBSERVED_BY": ("Symptom", "Sensor"),
+    "ACTS_ON": ("ControlAction", "Actuator"),
+    "CAUSES": ("Fault", "Symptom"),
+    "AFFECTS_UNIT": ("Fault", "ProcessUnit"),
+    "SUGGESTS_ACTION": ("Fault", "ControlAction"),
+    "SUBJECT_TO": ("ControlAction", "Constraint"),
+    "HAS_RISK": ("ControlAction", "Risk"),
+    "HAS_CAPABILITY": ("ProcessUnit", "Capability"),
+}
+
 
 def canonicalize_name(value: str) -> str:
     raw = " ".join(value.split()).strip()
@@ -45,6 +56,13 @@ def validate_claims(claims: Iterable[ClaimRecord], min_confidence: float = 0.55)
             errors.append(f"confidence below threshold: {claim.extraction_confidence}")
         if not claim.evidence_text.strip():
             errors.append("missing evidence text")
+        expected_labels = RELATION_ROLE_RULES.get(claim.predicate)
+        if expected_labels and (claim.subject_label, claim.object_label) != expected_labels:
+            errors.append(
+                "relation-role mismatch: "
+                f"{claim.predicate} requires {expected_labels[0]} -> {expected_labels[1]}, "
+                f"got {claim.subject_label} -> {claim.object_label}"
+            )
 
         dedupe_key = (
             claim.normalized_subject,

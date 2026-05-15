@@ -10,6 +10,7 @@ ALLOWED_ENTITY_LABELS = {
     "Symptom",
     "Sensor",
     "ProcessUnit",
+    "Capability",
     "ControlAction",
     "Actuator",
     "Constraint",
@@ -26,6 +27,7 @@ ALLOWED_RELATIONS = {
     "ACTS_ON",
     "SUBJECT_TO",
     "HAS_RISK",
+    "HAS_CAPABILITY",
     "MENTIONED_IN",
     "PART_OF",
 }
@@ -39,6 +41,7 @@ CLAIM_TYPES = {
     "action_target",
     "constraint",
     "risk",
+    "capability",
 }
 
 

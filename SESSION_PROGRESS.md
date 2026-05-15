@@ -150,6 +150,12 @@ Read this after `AGENTS.md` and `WORKSPACE_INDEX.md` when starting a new session
   - pipeline detected the canonical source change, rebuilt canonical/chunks from `fusion\canonical.repaired.md`, and re-executed extraction cleanly
   - downstream run completed with `64` chunks, `64` succeeded chunk extractions, and `0` failed chunks
   - heuristic extraction still produced `0` validated claims, so the repaired markdown path is operational but semantic yield still depends on stronger extraction than the heuristic fallback
+- Gemini claim-extraction / validation alignment landed on 2026-05-15:
+  - `tep_pdf_kg\schema.py` now includes `Capability`, `HAS_CAPABILITY`, and claim type `capability`
+  - `tep_pdf_kg\gemini_extractor.py` now includes explicit relation-role rules, capability/inventory negative guidance, and confidence calibration guidance
+  - LLM claim fallback confidence now defaults to `0.7` in both `tep_pdf_kg\gemini_extractor.py` and `tep_pdf_kg\extraction.py`, while validator threshold stays `0.55`
+  - `tep_pdf_kg\validation.py` now rejects relation-role mismatches such as `Sensor ACTS_ON ProcessUnit` even when confidence is high
+  - `tep_pdf_kg\neo4j_import.py` now indexes/imports `Capability` nodes and `HAS_CAPABILITY` relations without changing the pipeline import interface
 
 ## Open Items
 
@@ -163,7 +169,8 @@ Read this after `AGENTS.md` and `WORKSPACE_INDEX.md` when starting a new session
 - Decide whether to continue broader `DOWNS` repair on `gemini-2.5-flash-lite` in small bounded batches, or first reset/clean historical repair checkpoint state for a clearer run summary.
 - Re-run a small `prose_conflict` batch after the prompt hardening to see whether the new rules improve coherence beyond the already successful `docling_only_prose` repairs.
 - Tighten `prose_conflict` rules further for list-transition / heading-fragment cases like `candidate_0010`, where the current prompt still allows awkward stitched prose.
+- Decide whether to pivot the next live Gemini claim-extraction probe away from `DOWNS.pdf`, since `DOWNS` may be the hardest pilot document due to noisy front-matter/inventory language and repaired-markdown complexity.
 
 ## Next Recommended Step
 
-1. Run a small live claim-extraction probe on the repaired-markdown pipeline path using `gemini-2.5-flash-lite`, because the downstream handoff is now confirmed operational while heuristic extraction still yields no useful claims.
+1. Run a small live Gemini claim-extraction probe on `Decentralized_control_of_the_Tennessee_E.pdf` with `gemini-2.5-flash-lite` before returning to `DOWNS.pdf`, so the new capability/role-validation rules can be checked on an easier pilot document.
