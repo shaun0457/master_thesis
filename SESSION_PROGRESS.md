@@ -125,6 +125,13 @@ Read this after `AGENTS.md` and `WORKSPACE_INDEX.md` when starting a new session
   - `prose_conflict` prompt now explicitly forbids splicing unrelated fragments and instructs the model to prefer the smallest coherent grounded prose block
   - table/formula candidates now have clearer bias toward `keep_deferred` unless a short grounded summary is truly recoverable
   - prompt regression tests were added in `tests\test_tep_pdf_kg_fusion.py`
+- Live `prose_conflict` batch after prompt hardening on 2026-05-15:
+  - ran `candidate_0008` through `candidate_0012` on `gemini-2.5-flash-lite`
+  - all 5 candidates succeeded: `replace` for `0008`, `0010`; `omit` for `0012`; `keep_deferred` for table-like `0009`, `0011`
+  - `candidate_0008` is a clear quality win: it repaired a noisy conflict into a coherent paragraph and corrected `fad` to `fed`
+  - `candidate_0012` is also a good outcome: the model chose `omit` instead of forcing short noisy fragments into markdown
+  - `candidate_0010` is only a partial win: it still produced an awkward sentence fragment (`from there to a Mode 1 is the base case`), so the prompt is improved but conflict handling still needs stronger anti-fragment rules for mixed paragraph/list transitions
+  - repaired merge is now materially different from `canonical.cleaned.md`, with `applied_repair_count: 10`, `replace: 5`, `keep_deferred: 4`, `omit: 1`
 
 ## Open Items
 
@@ -137,7 +144,8 @@ Read this after `AGENTS.md` and `WORKSPACE_INDEX.md` when starting a new session
 - Pick another currently available lower-cost Gemini model; `gemini-2.0-flash-lite` is no longer available for this account/environment.
 - Decide whether to continue broader `DOWNS` repair on `gemini-2.5-flash-lite` in small bounded batches, or first reset/clean historical repair checkpoint state for a clearer run summary.
 - Re-run a small `prose_conflict` batch after the prompt hardening to see whether the new rules improve coherence beyond the already successful `docling_only_prose` repairs.
+- Tighten `prose_conflict` rules further for list-transition / heading-fragment cases like `candidate_0010`, where the current prompt still allows awkward stitched prose.
 
 ## Next Recommended Step
 
-1. Run a small `prose_conflict` batch on `gemini-2.5-flash-lite` after the prompt hardening and compare the resulting `canonical.repaired.md` diff against the current repaired baseline.
+1. Refine the `prose_conflict` prompt to reject paragraph/list hybrids like `candidate_0010`, then rerun a very small conflict batch to confirm cleaner replacements before scaling repair coverage further.
