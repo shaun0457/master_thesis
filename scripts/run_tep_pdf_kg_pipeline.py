@@ -12,7 +12,7 @@ if str(ROOT) not in sys.path:
 
 os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
 
-from tep_pdf_kg import build_pilot_manifest, run_document_pipeline
+from tep_pdf_kg import build_gemini_extractor, build_pilot_manifest, run_document_pipeline
 
 
 def _get_driver():
@@ -31,15 +31,21 @@ def main() -> int:
     parser.add_argument("--output-root", default="artifacts/tep_pdf_kg")
     parser.add_argument("--doc", action="append", help="Optional doc_id filter. Repeatable.")
     parser.add_argument("--import-neo4j", action="store_true", help="Import validated claims into Neo4j.")
+    parser.add_argument("--extractor", choices=["heuristic", "gemini"], default="heuristic")
+    parser.add_argument("--gemini-model", default=None, help="Optional Gemini model override for claim extraction.")
     args = parser.parse_args()
 
     manifests = build_pilot_manifest(output_root=args.output_root)
     selected = set(args.doc or [])
     manifests = [manifest for manifest in manifests if not selected or manifest.doc_id in selected]
 
+    extractor = None
+    if args.extractor == "gemini":
+        extractor = build_gemini_extractor(model=args.gemini_model)
+
     driver = _get_driver() if args.import_neo4j else None
     try:
-        summaries = [run_document_pipeline(manifest, neo4j_driver=driver) for manifest in manifests]
+        summaries = [run_document_pipeline(manifest, extractor=extractor, neo4j_driver=driver) for manifest in manifests]
     finally:
         if driver is not None:
             driver.close()

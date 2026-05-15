@@ -6,6 +6,7 @@ from unittest.mock import MagicMock
 
 from tep_pdf_kg.chunking import build_chunks
 from tep_pdf_kg.extraction import extract_claims
+from tep_pdf_kg.gemini_extractor import build_gemini_extractor
 from tep_pdf_kg.neo4j_import import claim_queries, chunk_document_queries, schema_queries
 from tep_pdf_kg.pipeline import run_document_pipeline
 from tep_pdf_kg.schema import ChunkRecord, DocumentManifest, NormalizedDocument, SectionElement
@@ -149,3 +150,66 @@ def test_pipeline_writes_all_stage_artifacts(tmp_path: Path, monkeypatch):
         if line.strip()
     ]
     assert validated
+
+
+def test_gemini_extractor_uses_structured_output(monkeypatch):
+    import importlib
+
+    class FakeClaim:
+        def __init__(self, payload):
+            self._payload = payload
+
+        def model_dump(self):
+            return dict(self._payload)
+
+    class FakeBatch:
+        def __init__(self):
+            self.claims = [
+                FakeClaim(
+                    {
+                        "subject": "Fault 4",
+                        "subject_label": "Fault",
+                        "predicate": "CAUSES",
+                        "object": "High reactor temperature",
+                        "object_label": "Symptom",
+                        "claim_type": "diagnosis",
+                        "evidence_text": "Fault 4 causes high reactor temperature.",
+                        "extraction_confidence": 0.88,
+                        "review_status": "pending",
+                    }
+                )
+            ]
+
+    class FakeStructured:
+        def invoke(self, prompt):
+            return FakeBatch()
+
+    class FakeLLM:
+        def bind(self, **kwargs):
+            return self
+
+        def with_structured_output(self, schema):
+            return FakeStructured()
+
+    monkeypatch.setenv("GOOGLE_API_KEY", "dummy-key-for-unit-test")
+    common = importlib.import_module("common")
+    monkeypatch.setattr(common, "llm", FakeLLM())
+    monkeypatch.setattr(common, "invoke_with_retry", lambda fn, prompt: fn(prompt))
+
+    extractor = build_gemini_extractor(model="gemini-test")
+    claims = extractor(
+        {
+            "chunk": {
+                "chunk_id": "c1",
+                "text_md": "Fault 4 causes high reactor temperature.",
+                "page_start": 1,
+                "page_end": 1,
+            },
+            "document_metadata": {},
+            "allowed_relations": ["CAUSES"],
+        }
+    )
+
+    assert claims
+    assert claims[0]["predicate"] == "CAUSES"
+    assert claims[0]["subject_label"] == "Fault"
