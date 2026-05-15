@@ -144,6 +144,12 @@ Read this after `AGENTS.md` and `WORKSPACE_INDEX.md` when starting a new session
   - this is an improvement over the prior awkward hybrid (`from there to a Mode 1 is the base case`)
   - merge behavior is now better understood: the repair correctly replaced the candidate placeholder, but a separate noisy deterministic-fusion prose row still remains immediately after it, so the local region is improved but not fully clean
   - implication: some remaining bad prose is not a prompt problem anymore; it is a candidate-segmentation / deterministic-fusion issue because the bad sentence is coming from a different retained base row
+- Downstream repaired-markdown pipeline run on 2026-05-15:
+  - ran `scripts\run_tep_pdf_kg_pipeline.py` against the existing `DOWNS` artifact root with `--resume --extractor heuristic`
+  - the resumed pipeline correctly switched to `canonical_source = fusion_repaired_markdown`
+  - pipeline detected the canonical source change, rebuilt canonical/chunks from `fusion\canonical.repaired.md`, and re-executed extraction cleanly
+  - downstream run completed with `64` chunks, `64` succeeded chunk extractions, and `0` failed chunks
+  - heuristic extraction still produced `0` validated claims, so the repaired markdown path is operational but semantic yield still depends on stronger extraction than the heuristic fallback
 
 ## Open Items
 
@@ -160,4 +166,4 @@ Read this after `AGENTS.md` and `WORKSPACE_INDEX.md` when starting a new session
 
 ## Next Recommended Step
 
-1. Improve deterministic fusion / candidate segmentation around adjacent `prose_conflict` rows in `Process Description`, so repair can replace or suppress the remaining bad retained base prose instead of only inserting a cleaner neighboring sub-paragraph.
+1. Run a small live claim-extraction probe on the repaired-markdown pipeline path using `gemini-2.5-flash-lite`, because the downstream handoff is now confirmed operational while heuristic extraction still yields no useful claims.
