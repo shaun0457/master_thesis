@@ -61,6 +61,7 @@ class DocumentManifest:
     preferred_parser: str = "opendataloader-pdf"
     selected_parser: str | None = None
     reviewed_document_path: str | None = None
+    reviewed_markdown_path: str | None = None
     reviewed_chunks_path: str | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
 
@@ -111,6 +112,7 @@ class ChunkRecord:
     element_refs: list[str] = field(default_factory=list)
     heading_path: list[str] = field(default_factory=list)
     review_status: str = "pending"
+    metadata: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

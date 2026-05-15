@@ -9,8 +9,38 @@ from tep_pdf_kg.extraction import extract_claims
 from tep_pdf_kg.gemini_extractor import build_gemini_extractor
 from tep_pdf_kg.neo4j_import import claim_queries, chunk_document_queries, schema_queries
 from tep_pdf_kg.pipeline import run_document_pipeline
-from tep_pdf_kg.schema import ChunkRecord, DocumentManifest, NormalizedDocument, SectionElement
+from tep_pdf_kg.schema import DocumentManifest, NormalizedDocument
 from tep_pdf_kg.validation import validate_claims
+
+
+def _sample_parser_json() -> dict:
+    return {
+        "elements": [
+            {"id": "h1", "type": "heading", "text": "Fault 4", "page_number": 12, "heading_level": 2},
+            {
+                "id": "p1",
+                "type": "paragraph",
+                "text": (
+                    "Fault 4 causes high reactor temperature. "
+                    "High reactor temperature observed by xmeas_9. "
+                    "Fault 4 affects Reactor."
+                ),
+                "page_number": 12,
+                "bbox": {"x0": 1, "y0": 2, "x1": 3, "y1": 4},
+            },
+            {
+                "id": "p2",
+                "type": "paragraph",
+                "text": (
+                    "Fault 4 suggests increase cooling water flow. "
+                    "Increase cooling water flow on cooling water valve. "
+                    "Control action increase cooling water flow subject to separator pressure limit. "
+                    "Control action increase cooling water flow risk off-spec product."
+                ),
+                "page_number": 13,
+            },
+        ]
+    }
 
 
 def _sample_document() -> NormalizedDocument:
@@ -22,49 +52,34 @@ def _sample_document() -> NormalizedDocument:
         selected_as_canonical=True,
         title="DOWNS",
         document_md=(
-            "## Fault 4\n"
+            "## Fault 4\n\n"
             "Fault 4 causes high reactor temperature. "
             "High reactor temperature observed by xmeas_9. "
-            "Fault 4 affects Reactor. "
+            "Fault 4 affects Reactor.\n\n"
             "Fault 4 suggests increase cooling water flow. "
             "Increase cooling water flow on cooling water valve. "
             "Control action increase cooling water flow subject to separator pressure limit. "
             "Control action increase cooling water flow risk off-spec product.\n"
         ),
-        sections=[
-            SectionElement(
-                text_md=(
-                    "Fault 4 causes high reactor temperature. "
-                    "High reactor temperature observed by xmeas_9. "
-                    "Fault 4 affects Reactor. "
-                    "Fault 4 suggests increase cooling water flow. "
-                    "Increase cooling water flow on cooling water valve. "
-                    "Control action increase cooling water flow subject to separator pressure limit. "
-                    "Control action increase cooling water flow risk off-spec product."
-                ),
-                heading_path=["Fault 4"],
-                page_start=12,
-                page_end=12,
-                element_ref="page-12-line-1",
-            )
-        ],
-        pages=[{"page_number": 12, "text": "Fault 4...", "block_count": 1}],
-        metadata={},
+        sections=[],
+        pages=[{"page_number": 12, "text": "Fault 4...", "block_count": 2}],
+        metadata={"parser_json": _sample_parser_json(), "provenance_quality": "native"},
     )
 
 
-def test_chunk_builder_preserves_traceability_fields():
-    chunks = build_chunks(_sample_document(), min_chars=10, max_chars=1000)
+def test_chunk_builder_reads_markdown_and_preserves_traceability_fields():
+    chunks = build_chunks(_sample_document(), min_chars=10, max_chars=220)
 
-    assert len(chunks) == 1
-    chunk = chunks[0]
-    assert chunk.doc_id == "DOWNS.pdf"
-    assert chunk.page_start == 12
-    assert chunk.page_end == 12
-    assert chunk.section_title == "Fault 4"
-    assert chunk.prev_chunk_id is None
-    assert chunk.next_chunk_id is None
-    assert chunk.element_refs == ["page-12-line-1"]
+    assert len(chunks) == 2
+    assert all(chunk.section_title == "Fault 4" for chunk in chunks)
+    assert chunks[0].heading_path == ["Fault 4"]
+    assert chunks[0].page_start == 12
+    assert chunks[0].page_end == 13
+    assert chunks[0].element_refs == ["p1", "p2"]
+    assert chunks[0].metadata["provenance_quality"] == "native"
+    assert chunks[0].prev_chunk_id is None
+    assert chunks[0].next_chunk_id == chunks[1].chunk_id
+    assert chunks[1].prev_chunk_id == chunks[0].chunk_id
 
 
 def test_extract_validate_and_prepare_claim_queries():
@@ -95,10 +110,11 @@ def test_schema_and_chunk_document_queries_cover_v1_entities():
     assert any("MERGE (c:Chunk" in query for query, _ in query_pairs)
 
 
-def test_pipeline_writes_all_stage_artifacts(tmp_path: Path, monkeypatch):
+def test_pipeline_writes_all_stage_artifacts_and_prefers_reviewed_markdown(tmp_path: Path, monkeypatch):
     document = _sample_document()
 
-    def fake_run_parser(pdf_path, manifest, parser_name):
+    def fake_run_parser(pdf_path, manifest, parser_name, output_dir):
+        Path(output_dir).mkdir(parents=True, exist_ok=True)
         clone = NormalizedDocument(
             doc_id=document.doc_id,
             source_path=pdf_path,
@@ -109,8 +125,14 @@ def test_pipeline_writes_all_stage_artifacts(tmp_path: Path, monkeypatch):
             document_md=document.document_md,
             sections=document.sections,
             pages=document.pages,
-            metadata=document.metadata,
+            metadata={
+                "parser_json": _sample_parser_json(),
+                "document_json_path": str(Path(output_dir) / "document.json"),
+                "document_markdown_path": str(Path(output_dir) / "document.md"),
+            },
         )
+        (Path(output_dir) / "document.md").write_text(clone.document_md, encoding="utf-8")
+        (Path(output_dir) / "document.json").write_text(json.dumps(_sample_parser_json()), encoding="utf-8")
         return MagicMock(
             parser_name=parser_name,
             status="ok",
@@ -125,22 +147,31 @@ def test_pipeline_writes_all_stage_artifacts(tmp_path: Path, monkeypatch):
         )
 
     monkeypatch.setattr("tep_pdf_kg.pipeline.run_parser", fake_run_parser)
+    reviewed_md = tmp_path / "reviewed.md"
+    reviewed_md.write_text(
+        "## Fault 4\n\nFault 4 causes high reactor temperature. Fault 4 affects Reactor.\n",
+        encoding="utf-8",
+    )
     manifest = DocumentManifest(
         doc_id="DOWNS.pdf",
         pdf_path=str(tmp_path / "DOWNS.pdf"),
         output_dir=str(tmp_path / "out"),
+        reviewed_markdown_path=str(reviewed_md),
     )
     Path(manifest.pdf_path).write_bytes(b"%PDF-1.4\n")
 
-    summary = run_document_pipeline(manifest)
+    summary = run_document_pipeline(manifest, start_chunk=0, max_chunks=1)
 
     out_dir = Path(summary["output_dir"])
     assert summary["selected_parser"] == "opendataloader-pdf"
+    assert summary["canonical_source"] == "reviewed_markdown"
+    assert summary["processed_chunk_count"] == 1
     assert (out_dir / "chunks.jsonl").exists()
     assert (out_dir / "claims.raw.jsonl").exists()
     assert (out_dir / "claims.validated.jsonl").exists()
     assert (out_dir / "claims.rejected.json").exists()
     assert (out_dir / "pipeline_summary.json").exists()
+    assert (out_dir / "canonical_document.md").read_text(encoding="utf-8") == reviewed_md.read_text(encoding="utf-8")
     assert (out_dir / "opendataloader-pdf" / "document.md").exists()
     assert (out_dir / "docling" / "parser_report.json").exists()
 
@@ -150,6 +181,58 @@ def test_pipeline_writes_all_stage_artifacts(tmp_path: Path, monkeypatch):
         if line.strip()
     ]
     assert validated
+
+
+def test_pipeline_append_claims_supports_resume_windows(tmp_path: Path, monkeypatch):
+    document = _sample_document()
+
+    def fake_run_parser(pdf_path, manifest, parser_name, output_dir):
+        Path(output_dir).mkdir(parents=True, exist_ok=True)
+        clone = NormalizedDocument(
+            doc_id=document.doc_id,
+            source_path=pdf_path,
+            parser_used=parser_name,
+            parser_status="ok",
+            selected_as_canonical=parser_name == manifest.preferred_parser,
+            title=document.title,
+            document_md=document.document_md,
+            sections=document.sections,
+            pages=document.pages,
+            metadata={
+                "parser_json": _sample_parser_json(),
+                "document_json_path": str(Path(output_dir) / "document.json"),
+                "document_markdown_path": str(Path(output_dir) / "document.md"),
+            },
+        )
+        return MagicMock(
+            parser_name=parser_name,
+            status="ok",
+            document=clone,
+            to_dict=lambda: {"parser_name": parser_name, "status": "ok", "document": clone.to_dict(), "warnings": [], "error": None},
+        )
+
+    monkeypatch.setattr("tep_pdf_kg.pipeline.run_parser", fake_run_parser)
+    monkeypatch.setattr("tep_pdf_kg.pipeline.build_chunks", lambda doc: build_chunks(doc, min_chars=10, max_chars=220))
+    manifest = DocumentManifest(
+        doc_id="DOWNS.pdf",
+        pdf_path=str(tmp_path / "DOWNS.pdf"),
+        output_dir=str(tmp_path / "out"),
+    )
+    Path(manifest.pdf_path).write_bytes(b"%PDF-1.4\n")
+
+    first = run_document_pipeline(manifest, start_chunk=0, max_chunks=1, append_claims=False)
+    second = run_document_pipeline(manifest, start_chunk=1, max_chunks=1, append_claims=True)
+
+    out_dir = Path(first["output_dir"])
+    raw_claims = [
+        json.loads(line)
+        for line in (out_dir / "claims.raw.jsonl").read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    assert first["processed_chunk_count"] == 1
+    assert second["processed_chunk_count"] == 1
+    assert len(raw_claims) >= 2
+    assert second["raw_claim_count"] == len(raw_claims)
 
 
 def test_gemini_extractor_uses_structured_output(monkeypatch):

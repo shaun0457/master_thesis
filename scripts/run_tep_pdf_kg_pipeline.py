@@ -31,8 +31,15 @@ def main() -> int:
     parser.add_argument("--output-root", default="artifacts/tep_pdf_kg")
     parser.add_argument("--doc", action="append", help="Optional doc_id filter. Repeatable.")
     parser.add_argument("--import-neo4j", action="store_true", help="Import validated claims into Neo4j.")
-    parser.add_argument("--extractor", choices=["heuristic", "gemini"], default="heuristic")
+    parser.add_argument("--extractor", choices=["heuristic", "gemini"], default="gemini")
     parser.add_argument("--gemini-model", default=None, help="Optional Gemini model override for claim extraction.")
+    parser.add_argument("--start-chunk", type=int, default=0, help="Start extraction from this chunk index.")
+    parser.add_argument("--max-chunks", type=int, default=None, help="Process at most this many chunks.")
+    parser.add_argument(
+        "--append-claims",
+        action="store_true",
+        help="Append new raw claims to existing claim artifacts instead of truncating them first.",
+    )
     args = parser.parse_args()
 
     manifests = build_pilot_manifest(output_root=args.output_root)
@@ -45,7 +52,17 @@ def main() -> int:
 
     driver = _get_driver() if args.import_neo4j else None
     try:
-        summaries = [run_document_pipeline(manifest, extractor=extractor, neo4j_driver=driver) for manifest in manifests]
+        summaries = [
+            run_document_pipeline(
+                manifest,
+                extractor=extractor,
+                neo4j_driver=driver,
+                start_chunk=args.start_chunk,
+                max_chunks=args.max_chunks,
+                append_claims=args.append_claims,
+            )
+            for manifest in manifests
+        ]
     finally:
         if driver is not None:
             driver.close()
