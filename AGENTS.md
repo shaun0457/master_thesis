@@ -18,7 +18,7 @@ The codebase centers on a LangGraph supervisor that delegates industrial-domain 
 - Treat [WORKSPACE_INDEX.md](./WORKSPACE_INDEX.md) as the stable repo map.
 - Treat [CODEx_MEMORY.md](./CODEx_MEMORY.md) as medium-term durable memory.
 - Treat [SESSION_PROGRESS.md](./SESSION_PROGRESS.md) as the single source of truth for current state and next step.
-- Do not use `PLAN.md` or `PROGRESS.md` as startup sources; they are legacy archive documents.
+- Do not use [PROGRESS.md](./PROGRESS.md) or anything under `archive/` as startup sources; they are historical context only.
 - Keep shared operating rules in this file and keep [CLAUDE.md](./CLAUDE.md) thin.
 - Before ending a meaningful work block, update [SESSION_PROGRESS.md](./SESSION_PROGRESS.md) if the phase, blockers, assumptions, or next step changed.
 
@@ -28,6 +28,10 @@ The codebase centers on a LangGraph supervisor that delegates industrial-domain 
 - Use [CODEx_MEMORY.md](./CODEx_MEMORY.md) for stable project conventions, domain vocabulary, and non-transient constraints.
 - Use [SESSION_PROGRESS.md](./SESSION_PROGRESS.md) for the active handoff, current phase, recent completions, and exactly one next action.
 - If a decision only matters for the current work block, keep it in [SESSION_PROGRESS.md](./SESSION_PROGRESS.md), not here.
+- Keep [SESSION_PROGRESS.md](./SESSION_PROGRESS.md) short and state-focused; do not turn it into a second rules file.
+- When updating [SESSION_PROGRESS.md](./SESSION_PROGRESS.md), rewrite and condense it to the current state instead of only appending; collapse stale history into short summaries and keep only the minimum context needed for the next session.
+- Before starting any work block, read [SESSION_PROGRESS.md](./SESSION_PROGRESS.md). 
+- after finish any work update [SESSION_PROGRESS.md](./SESSION_PROGRESS.md) and commit.
 
 ## Main Locations
 
@@ -49,3 +53,4 @@ Before ending a session:
 - Update [SESSION_PROGRESS.md](./SESSION_PROGRESS.md) if current status, active artifacts, blockers, assumptions, or the next action changed.
 - Update [WORKSPACE_INDEX.md](./WORKSPACE_INDEX.md) only if repo structure or canonical entrypoints changed.
 - Update [CODEx_MEMORY.md](./CODEx_MEMORY.md) only when a convention, durable constraint, or domain decision should persist across many sessions.
+- Keep durable operating rules in `AGENTS.md` / `SESSION_START.md`, not in `SESSION_PROGRESS.md`.

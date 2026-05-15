@@ -4,176 +4,42 @@ Read this after `AGENTS.md` and `WORKSPACE_INDEX.md` when starting a new session
 
 ## Current Status
 
-- Diagnosis pipeline is shipped and recently hardened.
-- Neo4j-first TEP PDF KG v1 is landed and operational:
-  - parser-native Markdown-first ingestion exists under `tep_pdf_kg/`
+- Diagnosis pipeline and MAS2 delegation hardening are landed and previously regression-tested.
+- TEP PDF KG v1 is operational under `tep_pdf_kg/`:
+  - parser-native markdown/json ingestion exists
   - chunk checkpointing and `--resume` are in place
-  - Gemini prompt slimming and structured-output fallback are in place
-  - standalone markdown fusion exists under `tep_pdf_kg/markdown_fusion.py`
-- Blackboard is unified on `bb_tools.py`; delegate blackboard tools and diagnosis flow now use the canonical registry.
-- MAS2 workflow control flow was hardened on 2026-05-14:
-  - evidence checks now use the current `run_id`
-  - router artifacts now default to workspace `runs/`
-  - diagnosis-mode DE context no longer leaks `faultnumber=<predicted id>`
-  - DE only hands off to DS after a real `deliver_dataframe` success
-  - delegate subgraphs are rebuilt per call so state-bound blackboard/P2P tools do not leak across runs
-  - router returns new `ToolMessage`s for LangGraph reducer merging instead of mutating `state["messages"]`
-  - ME fault fact injection now prefers the current state `run_id` over the global environment
-- MAS2 internal delegation/runtime refactor landed on 2026-05-14:
-  - canonical subagent contract models now live in `subagent_contracts.py`
-  - delegate routing normalizes into structured tickets and delegate requests with lineage/depth fields
-  - subgraph invocation now builds `ContextPack`-style contract/evidence/history-tail inputs with runtime limits
-  - handoff validation is explicit for `ME -> DE`, `DE -> DS`, and `DS -> Supervisor`
-  - `deliver_dataframe` now returns `artifact_id` and `columns` so DS-ready dataset gating is schema-backed
-- Local diagnosis test automation landed on 2026-05-14:
-  - `scripts/run_diagnose_checks.py` can run inline/window API smoke checks without manually starting uvicorn
-  - the script also exposes pytest slices for diagnosis API coverage
+  - markdown fusion and Gemini repair stages exist
+  - pipeline prefers repaired markdown when available
+- Claim extraction / validation alignment landed on 2026-05-15:
+  - Gemini claim prompt now includes relation-role rules, capability/inventory negative guidance, and confidence calibration
+  - LLM fallback confidence now defaults to `0.7`; validator threshold remains `0.55`
+  - schema/import/validation now support `Capability`, `HAS_CAPABILITY`, and claim type `capability`
+  - relation-role mismatches are now rejected during validation
+- `DOWNS.pdf` remains the hardest pilot document because of noisy front-matter, inventory language, and repaired-markdown complexity, so the next KG probe should use `Decentralized_control_of_the_Tennessee_E.pdf` first.
 
 ## Verification
 
-- Targeted regressions passed on 2026-05-14:
-  - `pytest tests/test_workflow_hardening.py -q --basetemp .\_pytest_tmp_workflow`
-  - `pytest tests/test_blackboard_unified.py -q --basetemp .\_pytest_tmp_unified`
-  - `pytest tests/test_bb_me_injection.py -q --basetemp .\_pytest_tmp_meinj`
-  - `pytest tests/test_diagnose_flow.py -q --basetemp .\_pytest_tmp_diag`
-- Contract/runtime verification passed on 2026-05-14:
-  - `python -m py_compile subagent_contracts.py context_assembler.py delegate_tools.py router.py common.py de_tools.py`
-  - `pytest tests/test_subagent_contracts.py tests/test_context_assembler.py tests/test_workflow_hardening.py -q --basetemp .\_pytest_tmp_contracts`
-  - `pytest tests/test_bb_me_injection.py tests/test_blackboard_unified.py -q --basetemp .\_pytest_tmp_contracts2`
-- Local test script verification passed on 2026-05-14:
-  - `python .\scripts\run_diagnose_checks.py --mode window-mock`
-  - `python .\scripts\run_diagnose_checks.py --mode pytest-api`
-  - `python -m py_compile .\scripts\run_diagnose_checks.py`
-- Broad regression run on 2026-05-14:
-  - `pytest tests/ -q --basetemp .\_pytest_tmp_all`: 149 passed, 1 failed.
-  - Failure reproduced alone: `tests/test_hardening.py::test_rate_limit_blocks_after_threshold` expected 429 on the 4th `/diagnose` request but got 200.
-- KG ingestion verification passed on 2026-05-15:
-  - `python -m py_compile neo4j_kg.py tep_pdf_kg\__init__.py tep_pdf_kg\schema.py tep_pdf_kg\parsers.py tep_pdf_kg\chunking.py tep_pdf_kg\extraction.py tep_pdf_kg\validation.py tep_pdf_kg\neo4j_import.py tep_pdf_kg\pipeline.py scripts\run_tep_pdf_kg_pipeline.py tests\test_neo4j_kg.py tests\test_tep_pdf_kg_pipeline.py`
-  - `pytest tests\test_neo4j_kg.py tests\test_kg_match_fault.py tests\test_tep_pdf_kg_pipeline.py -q --basetemp .\_pytest_tmp_tepkg`
-  - `python .\scripts\run_tep_pdf_kg_pipeline.py --output-root .\artifacts\tep_pdf_kg_smoke --doc DOWNS.pdf`
-  - smoke-run result: full staged artifacts emitted for `DOWNS.pdf`; validated claim count remained `0` on raw parser output, so manual normalization review remains necessary before useful semantic extraction/import on the pilot PDFs
-- Gemini extractor plumbing verification passed on 2026-05-15:
-  - `python -m py_compile tep_pdf_kg\gemini_extractor.py scripts\run_tep_pdf_kg_pipeline.py tests\test_tep_pdf_kg_pipeline.py`
-  - `pytest tests\test_tep_pdf_kg_pipeline.py tests\test_neo4j_kg.py tests\test_kg_match_fault.py -q --basetemp .\_pytest_tmp_gemkg`
-  - current limitation: no live Gemini extraction run was executed in-session, so the new `--extractor gemini` path is unit-verified but not yet validated against the real pilot PDFs and API responses
-- Parser-native Markdown-first KG verification passed on 2026-05-15:
-  - `python -m py_compile tep_pdf_kg\schema.py tep_pdf_kg\parsers.py tep_pdf_kg\chunking.py tep_pdf_kg\pipeline.py scripts\run_tep_pdf_kg_pipeline.py tests\test_tep_pdf_kg_pipeline.py`
-  - `pytest tests\test_tep_pdf_kg_pipeline.py tests\test_neo4j_kg.py tests\test_kg_match_fault.py -q --basetemp .\_pytest_tmp_tepkg_md_native`
-  - current limitation: the refactor is unit/integration verified with mocked native parser entrypoints, but no in-session live `opendataloader-pdf` / `Docling` run was executed yet against the pilot PDFs
-- Live `opendataloader-pdf` environment check passed on 2026-05-15:
-  - local environment already has `opendataloader-pdf 2.4.3` and `OpenJDK 24.0.1`
-  - real `opendataloader_pdf.convert(..., format="markdown,json")` succeeded on `TEP_docs\DOWNS.pdf` and emitted `artifacts\tep_pdf_kg_odl_check\DOWNS.md` plus `DOWNS.json`
-  - sandbox note: the first in-sandbox run failed with `AccessDeniedException` on the Java security file under the local JDK path, while the same conversion succeeded when re-run outside the sandbox
-- Gemini extractor tolerance hardening passed on 2026-05-15:
-  - `tep_pdf_kg\gemini_extractor.py` now falls back from strict structured parsing to tolerant JSON extraction, keeps valid claims, and drops malformed partial items instead of aborting the whole document run
-  - `python -m py_compile tep_pdf_kg\gemini_extractor.py tests\test_tep_pdf_kg_pipeline.py`
-  - `pytest tests\test_tep_pdf_kg_pipeline.py -q --basetemp .\_pytest_tmp_gemini_tolerant2`
-- Live Gemini KG run status on 2026-05-15:
-  - full pipeline run with `.env`-loaded API key confirmed real `opendataloader-pdf` parser execution and real Gemini extraction calls
-  - pre-hardening failure mode: Gemini sometimes returned partially malformed structured claims, which previously crashed the run
-  - post-hardening failure mode: the full all-doc run no longer failed fast on malformed claim items, but the end-to-end Gemini pass still exceeded the command timeout when run monolithically
-  - partial live artifact note: `artifacts\tep_pdf_kg_gemini_live_full_retry2\DOWNS\claims.raw.jsonl` was populated during the live run, confirming chunk-level extraction progress before timeout
-- Chunk-checkpoint KG execution landed on 2026-05-15:
-  - extraction stage now writes per-chunk artifacts under `chunk_claims/` and an append-only `extract_status.jsonl` ledger
-  - `--resume` now skips `succeeded` chunks and retries `failed` / stale `running` chunks based on chunk-level state rather than raw file append position
-  - final `claims.raw.jsonl`, `claims.validated.jsonl`, and `claims.rejected.json` are now derived from succeeded chunk artifacts in chunk order during a separate merge/validate phase
-  - `scripts\run_tep_pdf_kg_pipeline.py` now supports bounded parallel extraction via `--max-workers`; `--append-claims` remains only as deprecated compatibility for resume semantics
-  - parser/chunking reuse on resume is now file-backed: if canonical markdown/json and `chunks.jsonl` already exist, the extraction retry path reuses them instead of re-running native parsers
-- Live DOWNS checkpointed Gemini run on 2026-05-15:
-  - fresh checkpointed run at `artifacts\tep_pdf_kg_gemini_downs_checkpointed\DOWNS` completed parser/chunking successfully and persisted `canonical_document.md`, `chunks.jsonl`, `extract_status.jsonl`, and `chunk_claims\`
-  - `DOWNS.pdf` produced `75` chunks; all `75` chunk extraction attempts failed with `429 RESOURCE_EXHAUSTED`
-  - failure root cause was quota on `generativelanguage.googleapis.com/generate_content_paid_tier_input_token_count` for `gemini-2.5-flash`, not parser or checkpoint logic
-- Post-slimming live DOWNS retry on 2026-05-15:
-  - Gemini no longer receives full `parser_json`; it now reads slim metadata plus the chunk payload
-  - resume run with `--max-workers 1` partially succeeded: `4` chunks succeeded, `71` still failed on `429 RESOURCE_EXHAUSTED`
-  - current bottleneck is still Gemini per-minute input-token quota, not parser execution or checkpointing
-- Markdown fusion stage landed on 2026-05-15:
-  - new deterministic `tep_pdf_kg\markdown_fusion.py` can preclean ODL/Docling markdown, align sections, and emit `fusion\canonical.cleaned.md`, `fusion_report.json`, and `alignment.jsonl`
-  - new `scripts\run_tep_pdf_md_fusion.py` runs the fusion stage independently from the KG extraction pipeline
-  - live `DOWNS` fusion run completed at `artifacts\tep_pdf_kg_gemini_downs_checkpointed\DOWNS\fusion`
-  - current limitation: v1 fusion is conservative and still heavily favors ODL on `DOWNS`; section alignment quality is not yet strong enough to repair many noisy table/OCR regions from Docling
-- Markdown fusion v2 hardening landed on 2026-05-15:
-  - `tep_pdf_kg\markdown_fusion.py` is now block-aware instead of section-only and emits richer `alignment.jsonl` rows plus `review_candidates.jsonl`
-  - low-quality table-heavy regions are now deferred with `defer_table_review` rather than forced into canonical prose
-  - live rerun on `DOWNS` now reports `19` sections, `277` block alignments, `27` deferred table regions, and `70` review candidates
-  - current limitation: `canonical.cleaned.md` is cleaner around deferred tables, but front-matter and some low-confidence prose conflicts still need another cleanup pass before it is clearly chunk-ready for full live Gemini extraction
-- Two-stage Gemini repair pipeline landed on 2026-05-15:
-  - new `tep_pdf_kg\gemini_repair.py` adds selective per-candidate Gemini repair over `fusion\review_candidates.jsonl`
-  - repair checkpointing now writes `fusion_repair\candidate_*.json` plus append-only `fusion_repair_status.jsonl`
-  - merge step now rebuilds `fusion\canonical.repaired.md` and `fusion\canonical.repaired.report.json` from deterministic fusion plus succeeded repair artifacts
-  - new `scripts\run_tep_pdf_md_repair.py` provides standalone repair execution with `--resume`, candidate bounds, worker bounds, and model override
-  - KG pipeline now automatically prefers `fusion\canonical.repaired.md` for chunking when present and invalidates old chunk-extraction checkpoints if the canonical markdown source changes
-- Live `DOWNS` Gemini repair attempt on 2026-05-15:
-  - in-sandbox run reached candidate checkpointing but Gemini calls failed with `WinError 10013`, confirming sandbox network restriction rather than repair-code failure
-  - non-sandbox resumed run reached real Gemini API calls successfully, then failed on `429 RESOURCE_EXHAUSTED` against `gemini-2.5-flash`
-  - current partial artifacts under `artifacts\tep_pdf_kg_gemini_downs_checkpointed\DOWNS\fusion_repair\` show `candidate_0000` through `candidate_0004` persisted as failed attempts; no `canonical.repaired.md` has been produced yet because no candidate repair succeeded
-  - practical blocker remains Gemini quota, now reproduced on both chunk claim extraction and the new repair stage
-- Gemini model-override fix and cheaper-model probe on 2026-05-15:
-  - `tep_pdf_kg\gemini_extractor.py` and `tep_pdf_kg\gemini_repair.py` now create a fresh `ChatGoogleGenerativeAI` client when `--gemini-model` is provided, instead of attempting `bind(model=...)`
-  - targeted tests now verify override behavior for both claim extraction and repair extraction
-  - live repair probe with `--gemini-model gemini-2.0-flash-lite --start-candidate 0 --max-candidates 1` confirmed the override is now real
-  - probe result: `gemini-2.0-flash-lite` returned `404 NOT_FOUND` with server message that the model is no longer available to new users, so it is not a viable fallback for this environment
-- Live `gemini-2.5-flash-lite` repair probe on 2026-05-15:
-  - one-candidate resumed repair probe on `DOWNS` succeeded for `candidate_0000`
-  - returned action was `keep_deferred` for the formula block, which is acceptable for this candidate class
-  - `fusion\canonical.repaired.report.json` now shows `applied_repair_count: 1`
-  - this is the first successful live repair candidate for `DOWNS`, so `gemini-2.5-flash-lite` is currently the best available fallback to continue probing
-  - artifact state still includes many historical `failed` and stale `running` rows from prior `gemini-2.5-flash` attempts, so broader resume results should be interpreted as mixed-history checkpoint state rather than a fresh clean run
-- Repair prompt hardening on 2026-05-15:
-  - `tep_pdf_kg\gemini_repair.py` now separates general repair rules from candidate-specific guidance
-  - `docling_only_prose` prompt now explicitly requires a complete standalone sentence/paragraph before allowing `replace`
-  - `prose_conflict` prompt now explicitly forbids splicing unrelated fragments and instructs the model to prefer the smallest coherent grounded prose block
-  - table/formula candidates now have clearer bias toward `keep_deferred` unless a short grounded summary is truly recoverable
-  - prompt regression tests were added in `tests\test_tep_pdf_kg_fusion.py`
-- Live `prose_conflict` batch after prompt hardening on 2026-05-15:
-  - ran `candidate_0008` through `candidate_0012` on `gemini-2.5-flash-lite`
-  - all 5 candidates succeeded: `replace` for `0008`, `0010`; `omit` for `0012`; `keep_deferred` for table-like `0009`, `0011`
-  - `candidate_0008` is a clear quality win: it repaired a noisy conflict into a coherent paragraph and corrected `fad` to `fed`
-  - `candidate_0012` is also a good outcome: the model chose `omit` instead of forcing short noisy fragments into markdown
-  - `candidate_0010` is only a partial win: it still produced an awkward sentence fragment (`from there to a Mode 1 is the base case`), so the prompt is improved but conflict handling still needs stronger anti-fragment rules for mixed paragraph/list transitions
-  - repaired merge is now materially different from `canonical.cleaned.md`, with `applied_repair_count: 10`, `replace: 5`, `keep_deferred: 4`, `omit: 1`
-- Prompt v2 tightening for paragraph/list hybrids on 2026-05-15:
-  - `tep_pdf_kg\gemini_repair.py` now explicitly prioritizes chunk readability over maximum token retention for `prose_conflict`
-  - `prose_conflict` guidance now treats process-flow prose, mode/list prose, captions, and headers as distinct discourse units that must not be merged
-  - prompt now explicitly flags dangling lead-ins such as `from there to a` as evidence of an incomplete side
-  - prompt now explicitly allows keeping only one coherent sub-paragraph instead of trying to preserve every fragment
-  - new regression test in `tests\test_tep_pdf_kg_fusion.py` covers the `candidate_0010`-style paragraph/list hybrid failure mode
-- Single-candidate merge test for `candidate_0010` on 2026-05-15:
-  - reran only `candidate_0010` with the v2 prompt on `gemini-2.5-flash-lite`
-  - new decision stayed `replace`, but now extracted only the cleaner standalone sub-paragraph: `The product mix is normally dictated by product demands. The plant productionrate is set by market demand or capacity limitations.`
-  - this is an improvement over the prior awkward hybrid (`from there to a Mode 1 is the base case`)
-  - merge behavior is now better understood: the repair correctly replaced the candidate placeholder, but a separate noisy deterministic-fusion prose row still remains immediately after it, so the local region is improved but not fully clean
-  - implication: some remaining bad prose is not a prompt problem anymore; it is a candidate-segmentation / deterministic-fusion issue because the bad sentence is coming from a different retained base row
-- Downstream repaired-markdown pipeline run on 2026-05-15:
-  - ran `scripts\run_tep_pdf_kg_pipeline.py` against the existing `DOWNS` artifact root with `--resume --extractor heuristic`
-  - the resumed pipeline correctly switched to `canonical_source = fusion_repaired_markdown`
-  - pipeline detected the canonical source change, rebuilt canonical/chunks from `fusion\canonical.repaired.md`, and re-executed extraction cleanly
-  - downstream run completed with `64` chunks, `64` succeeded chunk extractions, and `0` failed chunks
-  - heuristic extraction still produced `0` validated claims, so the repaired markdown path is operational but semantic yield still depends on stronger extraction than the heuristic fallback
-- Gemini claim-extraction / validation alignment landed on 2026-05-15:
-  - `tep_pdf_kg\schema.py` now includes `Capability`, `HAS_CAPABILITY`, and claim type `capability`
-  - `tep_pdf_kg\gemini_extractor.py` now includes explicit relation-role rules, capability/inventory negative guidance, and confidence calibration guidance
-  - LLM claim fallback confidence now defaults to `0.7` in both `tep_pdf_kg\gemini_extractor.py` and `tep_pdf_kg\extraction.py`, while validator threshold stays `0.55`
-  - `tep_pdf_kg\validation.py` now rejects relation-role mismatches such as `Sensor ACTS_ON ProcessUnit` even when confidence is high
-  - `tep_pdf_kg\neo4j_import.py` now indexes/imports `Capability` nodes and `HAS_CAPABILITY` relations without changing the pipeline import interface
+- Prior diagnosis and MAS2 hardening regressions passed on 2026-05-14, except the known `/diagnose` rate-limit failure in `tests/test_hardening.py::test_rate_limit_blocks_after_threshold`.
+- KG pipeline verification passed on 2026-05-15:
+  - `pytest tests\test_tep_pdf_kg_pipeline.py tests\test_neo4j_kg.py tests\test_kg_match_fault.py -q`
+  - parser-native markdown path, checkpointed extraction, and repaired-markdown preference were unit/integration verified
+- Claim-alignment verification passed on 2026-05-15:
+  - `python -m py_compile tep_pdf_kg\schema.py tep_pdf_kg\extraction.py tep_pdf_kg\gemini_extractor.py tep_pdf_kg\validation.py tep_pdf_kg\neo4j_import.py tests\test_tep_pdf_kg_pipeline.py`
+  - `pytest tests\test_tep_pdf_kg_pipeline.py -q --basetemp .\_pytest_tmp_claimcap`
+  - `pytest tests\test_neo4j_kg.py tests\test_kg_match_fault.py -q --basetemp .\_pytest_tmp_claimcap_neo`
+- Live environment facts already confirmed on 2026-05-15:
+  - `opendataloader-pdf` and Java work locally for real markdown conversion
+  - Gemini live runs are functional but constrained by quota / sandbox network restrictions depending on execution mode
 
 ## Open Items
 
-- Fix or triage the pre-existing `/diagnose` rate-limit regression in `tests/test_hardening.py::test_rate_limit_blocks_after_threshold`.
-- Re-run live diagnosis evaluation items `gq10-12`; they were not yet revalidated live after the workflow hardening.
-- Decide whether to further clean old commented legacy code blocks in `delegate_tools.py` and `router.py` now that the contract path is in place.
-- Tune batch sizing / worker defaults for real Gemini runs now that checkpointed resume and parallel chunk execution exist operationally.
-- Run a live `DOWNS` selective repair pass to confirm `canonical.repaired.md` materially improves chunk-ready text and downstream Gemini extraction yield.
-- Decide whether to switch live repair/extraction retries to a lower-quota-cost Gemini model or wait for quota reset before continuing the `DOWNS` markdown repair run.
-- Pick another currently available lower-cost Gemini model; `gemini-2.0-flash-lite` is no longer available for this account/environment.
-- Decide whether to continue broader `DOWNS` repair on `gemini-2.5-flash-lite` in small bounded batches, or first reset/clean historical repair checkpoint state for a clearer run summary.
-- Re-run a small `prose_conflict` batch after the prompt hardening to see whether the new rules improve coherence beyond the already successful `docling_only_prose` repairs.
-- Tighten `prose_conflict` rules further for list-transition / heading-fragment cases like `candidate_0010`, where the current prompt still allows awkward stitched prose.
-- Decide whether to pivot the next live Gemini claim-extraction probe away from `DOWNS.pdf`, since `DOWNS` may be the hardest pilot document due to noisy front-matter/inventory language and repaired-markdown complexity.
-- Run the `Decentralized_control_of_the_Tennessee_E.pdf` path in staged order rather than jumping directly to live claim extraction: markdown conversion first, then Gemini merge/repair, then live Gemini claim extraction.
+- Fix or triage the pre-existing `/diagnose` rate-limit regression.
+- Run a staged KG attempt on `Decentralized_control_of_the_Tennessee_E.pdf` before returning to `DOWNS.pdf`.
+- Decide whether broader `DOWNS` repair/extraction should wait for quota reset or continue in small bounded `gemini-2.5-flash-lite` batches.
+- Further tighten `prose_conflict` handling if repaired markdown from the easier pilot still contains hybrid fragments.
 
 ## Next Recommended Step
 
-1. Run markdown conversion for `Decentralized_control_of_the_Tennessee_E.pdf` first, so parser-native artifacts exist before any Gemini-dependent stages.
-2. Run Gemini merge/repair on the converted `Decentralized_control_of_the_Tennessee_E.pdf` markdown, and review whether the repaired canonical markdown is chunk-ready.
-3. Only after the repaired markdown looks usable, run a small live Gemini claim-extraction probe on `Decentralized_control_of_the_Tennessee_E.pdf` with `gemini-2.5-flash-lite`.
+1. Run markdown conversion for `Decentralized_control_of_the_Tennessee_E.pdf` to produce parser-native markdown/json artifacts.
+2. Run markdown fusion plus Gemini repair on that document and inspect whether the repaired canonical markdown is chunk-ready.
+3. Only then run a small live Gemini claim-extraction probe on `Decentralized_control_of_the_Tennessee_E.pdf` with `gemini-2.5-flash-lite`.
