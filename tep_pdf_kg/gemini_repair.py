@@ -180,20 +180,72 @@ def _payload_for_candidate(candidate: dict[str, Any], alignments: list[dict[str,
     }
 
 
+def _candidate_guidance(payload: dict[str, Any]) -> str:
+    candidate = payload.get("candidate") or {}
+    decision_type = str(candidate.get("decision_type", "")).strip()
+    if decision_type == "keep_docling_prose":
+        return (
+            "Candidate-specific rule for docling_only_prose:\n"
+            "- This text appears only in Docling, so decide whether it is real body prose or parser noise.\n"
+            "- Use 'replace' only when the repaired text is a complete, standalone sentence or paragraph that can be inserted directly into canonical markdown.\n"
+            "- If the text is only a short fragment, affiliation stub, caption stub, header fragment, or isolated noun phrase, prefer 'keep_deferred'.\n"
+            "- You may correct obvious OCR mistakes, punctuation, spacing, hyphenation, and casing, but do not add facts.\n"
+        )
+    if decision_type == "review_required_conflict":
+        return (
+            "Candidate-specific rule for prose_conflict:\n"
+            "- ODL and Docling disagree, so your job is to choose or reconstruct the smallest grounded prose block that reads as a coherent paragraph.\n"
+            "- Prefer the version that is semantically complete, locally consistent with neighboring accepted prose, and least contaminated by table headers or OCR debris.\n"
+            "- Do not splice unrelated sentence fragments together just to make something longer.\n"
+            "- If neither side supports a clean standalone prose block, return 'keep_deferred'.\n"
+        )
+    if decision_type == "defer_table_review":
+        return (
+            "Candidate-specific rule for deferred table review:\n"
+            "- Treat this as table-like content.\n"
+            "- Use 'replace' only if you can recover a short human-readable table summary grounded in the provided text.\n"
+            "- If the semantics are unclear or the content is mostly numeric/header noise, return 'keep_deferred'.\n"
+        )
+    if decision_type == "defer_formula_review":
+        return (
+            "Candidate-specific rule for deferred formula review:\n"
+            "- Treat this as formula-like content.\n"
+            "- Use 'replace' only if you can restate the formula region as a short grounded note without inventing chemistry details.\n"
+            "- If the formula text is partial or ambiguous, return 'keep_deferred'.\n"
+        )
+    return (
+        "Candidate-specific rule for low_confidence_docling_override:\n"
+        "- Docling may be cleaner than ODL but confidence is low.\n"
+        "- Use 'replace' only when Docling clearly yields a better complete prose block.\n"
+        "- Otherwise prefer 'keep_deferred' over risky normalization.\n"
+    )
+
+
 def _system_prompt() -> str:
     return (
         "You repair parser-fused markdown for downstream chunking.\n"
         "Work only from the provided ODL text, Docling text, and local heading context.\n"
-        "Do not invent facts. Do not rewrite the whole document.\n"
+        "Your goal is to produce the smallest grounded markdown block that can be inserted directly into the canonical document.\n"
+        "Do not invent facts. Do not rewrite the whole document. Do not summarize unless the candidate is table-like or formula-like.\n"
         "Return one machine-safe action for the candidate only.\n"
-        "Use 'replace' for a grounded repaired block, 'append_after' for safe add-on text, "
-        "'omit' for obvious noise, and 'keep_deferred' when meaning is not recoverable.\n"
-        "For tables or formulas, prefer a short grounded summary only when recoverable; otherwise keep_deferred.\n"
+        "Use 'replace' for a grounded repaired block that is complete enough to stand alone in markdown.\n"
+        "Use 'append_after' only when the base chosen text should remain and the candidate adds a clearly separate grounded follow-on block.\n"
+        "Use 'omit' only for obvious parser noise.\n"
+        "Use 'keep_deferred' whenever the evidence is too fragmentary, contradictory, or noisy to produce a reliable standalone block.\n"
+        "For prose candidates, prefer omission/defer over half-sentences, labels, column names, captions, affiliations, or OCR debris.\n"
+        "You may correct obvious OCR typos, spacing, punctuation, and broken words, but only inside text already supported by the supplied parser evidence.\n"
+        "If you choose 'replace', 'repaired_text' must be a complete readable sentence or paragraph, not a keyword fragment.\n"
     )
 
 
 def _user_prompt_from_payload(payload: dict[str, Any]) -> str:
     return (
+        f"{_candidate_guidance(payload)}\n"
+        "Local decision checklist:\n"
+        "- Is the output a complete standalone prose block?\n"
+        "- Is it grounded only in ODL/Docling text provided here?\n"
+        "- Is it free of table headers, affiliation fragments, or parser junk?\n"
+        "- If not, prefer keep_deferred.\n\n"
         "Repair candidate payload:\n"
         f"{json.dumps(payload, ensure_ascii=False, indent=2)}\n\n"
         "Return JSON with shape: "

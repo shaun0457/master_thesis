@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 
 from tep_pdf_kg.markdown_fusion import fuse_markdown_outputs, preclean_markdown
-from tep_pdf_kg.gemini_repair import build_gemini_repair_extractor, run_fusion_repair
+from tep_pdf_kg.gemini_repair import _user_prompt_from_payload, build_gemini_repair_extractor, run_fusion_repair
 
 
 def test_preclean_markdown_removes_images_page_headers_and_promotes_real_headings():
@@ -371,3 +371,49 @@ def test_gemini_repair_extractor_model_override_builds_new_client(monkeypatch):
 
     assert seen["kwargs"]["model"] == "gemini-2.0-flash-lite"
     assert decision["action"] == "replace"
+
+
+def test_repair_prompt_includes_docling_only_prose_rules():
+    prompt = _user_prompt_from_payload(
+        {
+            "candidate": {
+                "candidate_id": "candidate_0001",
+                "decision_type": "keep_docling_prose",
+                "defer_reason": "docling_only_prose",
+                "heading": "Control",
+                "section_id": "section_0001_control",
+                "block_type": "prose",
+                "odl_text": "",
+                "docling_text": "Eastman Chemical Company, Kingsport, T' N",
+                "chosen_text": "Eastman Chemical Company, Kingsport, T' N",
+            },
+            "local_context": {"previous_accepted_prose": "", "next_accepted_prose": ""},
+        }
+    )
+
+    assert "docling_only_prose" in prompt
+    assert "complete, standalone sentence or paragraph" in prompt
+    assert "prefer 'keep_deferred'" in prompt
+
+
+def test_repair_prompt_includes_prose_conflict_rules():
+    prompt = _user_prompt_from_payload(
+        {
+            "candidate": {
+                "candidate_id": "candidate_0009",
+                "decision_type": "review_required_conflict",
+                "defer_reason": "prose_conflict",
+                "heading": "Process Description",
+                "section_id": "section_0003_process-description",
+                "block_type": "prose",
+                "odl_text": "The gaseous reactants are fad to the reactor where they react...",
+                "docling_text": "products leave the reactor as vapors along with the unreacted feeds...",
+                "chosen_text": "The gaseous reactants are fad to the reactor where they react...",
+            },
+            "local_context": {"previous_accepted_prose": "Prior clean paragraph.", "next_accepted_prose": "Next clean paragraph."},
+        }
+    )
+
+    assert "prose_conflict" in prompt
+    assert "semantically complete" in prompt
+    assert "Do not splice unrelated sentence fragments together" in prompt
