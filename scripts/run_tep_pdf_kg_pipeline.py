@@ -35,10 +35,12 @@ def main() -> int:
     parser.add_argument("--gemini-model", default=None, help="Optional Gemini model override for claim extraction.")
     parser.add_argument("--start-chunk", type=int, default=0, help="Start extraction from this chunk index.")
     parser.add_argument("--max-chunks", type=int, default=None, help="Process at most this many chunks.")
+    parser.add_argument("--resume", action="store_true", help="Resume chunk extraction and skip already succeeded chunks.")
+    parser.add_argument("--max-workers", type=int, default=4, help="Maximum parallel workers for chunk extraction.")
     parser.add_argument(
         "--append-claims",
         action="store_true",
-        help="Append new raw claims to existing claim artifacts instead of truncating them first.",
+        help="Deprecated compatibility flag. Treated the same as --resume.",
     )
     args = parser.parse_args()
 
@@ -60,6 +62,8 @@ def main() -> int:
                 start_chunk=args.start_chunk,
                 max_chunks=args.max_chunks,
                 append_claims=args.append_claims,
+                resume=args.resume,
+                max_workers=args.max_workers,
             )
             for manifest in manifests
         ]

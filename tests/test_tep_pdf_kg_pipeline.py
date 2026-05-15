@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import time
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -160,17 +161,20 @@ def test_pipeline_writes_all_stage_artifacts_and_prefers_reviewed_markdown(tmp_p
     )
     Path(manifest.pdf_path).write_bytes(b"%PDF-1.4\n")
 
-    summary = run_document_pipeline(manifest, start_chunk=0, max_chunks=1)
+    summary = run_document_pipeline(manifest, start_chunk=0, max_chunks=1, max_workers=1)
 
     out_dir = Path(summary["output_dir"])
     assert summary["selected_parser"] == "opendataloader-pdf"
     assert summary["canonical_source"] == "reviewed_markdown"
     assert summary["processed_chunk_count"] == 1
+    assert summary["chunk_status_counts"]["succeeded"] == 1
     assert (out_dir / "chunks.jsonl").exists()
+    assert (out_dir / "extract_status.jsonl").exists()
     assert (out_dir / "claims.raw.jsonl").exists()
     assert (out_dir / "claims.validated.jsonl").exists()
     assert (out_dir / "claims.rejected.json").exists()
     assert (out_dir / "pipeline_summary.json").exists()
+    assert any((out_dir / "chunk_claims").glob("*.json"))
     assert (out_dir / "canonical_document.md").read_text(encoding="utf-8") == reviewed_md.read_text(encoding="utf-8")
     assert (out_dir / "opendataloader-pdf" / "document.md").exists()
     assert (out_dir / "docling" / "parser_report.json").exists()
@@ -183,8 +187,9 @@ def test_pipeline_writes_all_stage_artifacts_and_prefers_reviewed_markdown(tmp_p
     assert validated
 
 
-def test_pipeline_append_claims_supports_resume_windows(tmp_path: Path, monkeypatch):
+def test_pipeline_resume_skips_succeeded_and_retries_failed_chunks(tmp_path: Path, monkeypatch):
     document = _sample_document()
+    attempts: dict[str, int] = {}
 
     def fake_run_parser(pdf_path, manifest, parser_name, output_dir):
         Path(output_dir).mkdir(parents=True, exist_ok=True)
@@ -213,6 +218,15 @@ def test_pipeline_append_claims_supports_resume_windows(tmp_path: Path, monkeypa
 
     monkeypatch.setattr("tep_pdf_kg.pipeline.run_parser", fake_run_parser)
     monkeypatch.setattr("tep_pdf_kg.pipeline.build_chunks", lambda doc: build_chunks(doc, min_chars=10, max_chars=220))
+    original_extract = extract_claims
+
+    def fake_extract(chunk, extractor=None, document_metadata=None):
+        attempts[chunk.chunk_id] = attempts.get(chunk.chunk_id, 0) + 1
+        if chunk.chunk_index == 1 and attempts[chunk.chunk_id] == 1:
+            raise RuntimeError("chunk failed once")
+        return original_extract(chunk, extractor=extractor, document_metadata=document_metadata)
+
+    monkeypatch.setattr("tep_pdf_kg.pipeline.extract_claims", fake_extract)
     manifest = DocumentManifest(
         doc_id="DOWNS.pdf",
         pdf_path=str(tmp_path / "DOWNS.pdf"),
@@ -220,8 +234,8 @@ def test_pipeline_append_claims_supports_resume_windows(tmp_path: Path, monkeypa
     )
     Path(manifest.pdf_path).write_bytes(b"%PDF-1.4\n")
 
-    first = run_document_pipeline(manifest, start_chunk=0, max_chunks=1, append_claims=False)
-    second = run_document_pipeline(manifest, start_chunk=1, max_chunks=1, append_claims=True)
+    first = run_document_pipeline(manifest, resume=False, max_workers=1)
+    second = run_document_pipeline(manifest, resume=True, max_workers=1)
 
     out_dir = Path(first["output_dir"])
     raw_claims = [
@@ -229,10 +243,90 @@ def test_pipeline_append_claims_supports_resume_windows(tmp_path: Path, monkeypa
         for line in (out_dir / "claims.raw.jsonl").read_text(encoding="utf-8").splitlines()
         if line.strip()
     ]
-    assert first["processed_chunk_count"] == 1
+    assert first["failed_chunk_count"] == 1
+    assert first["succeeded_chunk_count"] == 1
     assert second["processed_chunk_count"] == 1
+    assert second["skipped_chunk_count"] == 1
+    assert second["failed_chunk_count"] == 0
     assert len(raw_claims) >= 2
     assert second["raw_claim_count"] == len(raw_claims)
+    assert sorted(attempts.values()) == [1, 2]
+
+
+def test_pipeline_parallel_merge_preserves_chunk_order(tmp_path: Path, monkeypatch):
+    document = _sample_document()
+    original_extract_claims = extract_claims
+
+    def fake_run_parser(pdf_path, manifest, parser_name, output_dir):
+        Path(output_dir).mkdir(parents=True, exist_ok=True)
+        clone = NormalizedDocument(
+            doc_id=document.doc_id,
+            source_path=pdf_path,
+            parser_used=parser_name,
+            parser_status="ok",
+            selected_as_canonical=parser_name == manifest.preferred_parser,
+            title=document.title,
+            document_md=document.document_md,
+            sections=document.sections,
+            pages=document.pages,
+            metadata={
+                "parser_json": _sample_parser_json(),
+                "document_json_path": str(Path(output_dir) / "document.json"),
+                "document_markdown_path": str(Path(output_dir) / "document.md"),
+            },
+        )
+        return MagicMock(
+            parser_name=parser_name,
+            status="ok",
+            document=clone,
+            to_dict=lambda: {"parser_name": parser_name, "status": "ok", "document": clone.to_dict(), "warnings": [], "error": None},
+        )
+
+    def fake_llm_extractor(payload):
+        chunk = payload["chunk"]
+        chunk_index = int(chunk["chunk_index"])
+        if chunk_index == 0:
+            time.sleep(0.05)
+        return [
+            {
+                "subject": f"Fault {chunk_index}",
+                "subject_label": "Fault",
+                "predicate": "CAUSES",
+                "object": f"Symptom {chunk_index}",
+                "object_label": "Symptom",
+                "claim_type": "diagnosis",
+                "evidence_text": str(chunk["text_md"])[:80],
+                "extraction_confidence": 0.9,
+                "review_status": "pending",
+            }
+        ]
+
+    def fake_extract(chunk, extractor=None, document_metadata=None):
+        return original_extract_claims(chunk, extractor=fake_llm_extractor, document_metadata=document_metadata)
+
+    monkeypatch.setattr("tep_pdf_kg.pipeline.run_parser", fake_run_parser)
+    monkeypatch.setattr("tep_pdf_kg.pipeline.build_chunks", lambda doc: build_chunks(doc, min_chars=10, max_chars=220))
+    monkeypatch.setattr("tep_pdf_kg.pipeline.extract_claims", fake_extract)
+    manifest = DocumentManifest(
+        doc_id="DOWNS.pdf",
+        pdf_path=str(tmp_path / "DOWNS.pdf"),
+        output_dir=str(tmp_path / "out"),
+    )
+    Path(manifest.pdf_path).write_bytes(b"%PDF-1.4\n")
+
+    summary = run_document_pipeline(manifest, max_workers=2)
+
+    out_dir = Path(summary["output_dir"])
+    raw_claims = [
+        json.loads(line)
+        for line in (out_dir / "claims.raw.jsonl").read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    assert summary["succeeded_chunk_count"] == 2
+    assert [row["source_chunk_id"] for row in raw_claims] == [
+        "DOWNS.pdf__chunk_0000_fault-4",
+        "DOWNS.pdf__chunk_0001_fault-4",
+    ]
 
 
 def test_gemini_extractor_uses_structured_output(monkeypatch):

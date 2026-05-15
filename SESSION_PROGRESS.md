@@ -77,6 +77,12 @@ Read this after `AGENTS.md` and `WORKSPACE_INDEX.md` when starting a new session
   - pre-hardening failure mode: Gemini sometimes returned partially malformed structured claims, which previously crashed the run
   - post-hardening failure mode: the full all-doc run no longer failed fast on malformed claim items, but the end-to-end Gemini pass still exceeded the command timeout when run monolithically
   - partial live artifact note: `artifacts\tep_pdf_kg_gemini_live_full_retry2\DOWNS\claims.raw.jsonl` was populated during the live run, confirming chunk-level extraction progress before timeout
+- Chunk-checkpoint KG execution landed on 2026-05-15:
+  - extraction stage now writes per-chunk artifacts under `chunk_claims/` and an append-only `extract_status.jsonl` ledger
+  - `--resume` now skips `succeeded` chunks and retries `failed` / stale `running` chunks based on chunk-level state rather than raw file append position
+  - final `claims.raw.jsonl`, `claims.validated.jsonl`, and `claims.rejected.json` are now derived from succeeded chunk artifacts in chunk order during a separate merge/validate phase
+  - `scripts\run_tep_pdf_kg_pipeline.py` now supports bounded parallel extraction via `--max-workers`; `--append-claims` remains only as deprecated compatibility for resume semantics
+  - parser/chunking reuse on resume is now file-backed: if canonical markdown/json and `chunks.jsonl` already exist, the extraction retry path reuses them instead of re-running native parsers
 
 ## Open Items
 
@@ -85,7 +91,8 @@ Read this after `AGENTS.md` and `WORKSPACE_INDEX.md` when starting a new session
 - Fix or triage the pre-existing `/diagnose` rate-limit regression in `tests/test_hardening.py::test_rate_limit_blocks_after_threshold`.
 - Re-run live diagnosis evaluation items `gq10-12`; they were not yet revalidated live after the workflow hardening.
 - Decide whether to further clean old commented legacy code blocks in `delegate_tools.py` and `router.py` now that the contract path is in place.
+- Tune batch sizing / worker defaults for real Gemini runs now that checkpointed resume and parallel chunk execution exist operationally.
 
 ## Next Recommended Step
 
-1. Implement proper checkpoint/resume for chunk extraction, then rerun the live Gemini KG pipeline in bounded batches per document so completed chunk claims are preserved and the remaining timeout problem is operational rather than semantic.
+1. Rerun the live Gemini KG pipeline on one pilot PDF with `--resume --max-workers 4 --max-chunks <small batch>` first, inspect `extract_status.jsonl` and `chunk_claims/`, then tune worker count and batch size before attempting the second document.
