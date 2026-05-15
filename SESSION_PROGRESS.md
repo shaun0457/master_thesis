@@ -103,6 +103,11 @@ Read this after `AGENTS.md` and `WORKSPACE_INDEX.md` when starting a new session
   - merge step now rebuilds `fusion\canonical.repaired.md` and `fusion\canonical.repaired.report.json` from deterministic fusion plus succeeded repair artifacts
   - new `scripts\run_tep_pdf_md_repair.py` provides standalone repair execution with `--resume`, candidate bounds, worker bounds, and model override
   - KG pipeline now automatically prefers `fusion\canonical.repaired.md` for chunking when present and invalidates old chunk-extraction checkpoints if the canonical markdown source changes
+- Live `DOWNS` Gemini repair attempt on 2026-05-15:
+  - in-sandbox run reached candidate checkpointing but Gemini calls failed with `WinError 10013`, confirming sandbox network restriction rather than repair-code failure
+  - non-sandbox resumed run reached real Gemini API calls successfully, then failed on `429 RESOURCE_EXHAUSTED` against `gemini-2.5-flash`
+  - current partial artifacts under `artifacts\tep_pdf_kg_gemini_downs_checkpointed\DOWNS\fusion_repair\` show `candidate_0000` through `candidate_0004` persisted as failed attempts; no `canonical.repaired.md` has been produced yet because no candidate repair succeeded
+  - practical blocker remains Gemini quota, now reproduced on both chunk claim extraction and the new repair stage
 
 ## Open Items
 
@@ -111,7 +116,8 @@ Read this after `AGENTS.md` and `WORKSPACE_INDEX.md` when starting a new session
 - Decide whether to further clean old commented legacy code blocks in `delegate_tools.py` and `router.py` now that the contract path is in place.
 - Tune batch sizing / worker defaults for real Gemini runs now that checkpointed resume and parallel chunk execution exist operationally.
 - Run a live `DOWNS` selective repair pass to confirm `canonical.repaired.md` materially improves chunk-ready text and downstream Gemini extraction yield.
+- Decide whether to switch live repair/extraction retries to a lower-quota-cost Gemini model or wait for quota reset before continuing the `DOWNS` markdown repair run.
 
 ## Next Recommended Step
 
-1. Run `scripts\run_tep_pdf_md_repair.py` on `DOWNS.pdf`, inspect `fusion\canonical.repaired.md`, then run a checkpointed Gemini extraction pass to compare repaired-markdown chunking against the prior raw canonical baseline.
+1. After Gemini quota resets or a cheaper model is selected, resume `scripts\run_tep_pdf_md_repair.py --resume` on `DOWNS.pdf` and only then compare repaired-markdown chunking against the prior raw canonical baseline.
