@@ -39,6 +39,7 @@ env/
 
 # Gemini / AI tool configs
 .gemini/
+.claude/
 
 # Runtime logs & outputs
 run_logs/
@@ -46,3 +47,22 @@ interactive_logs/
 figures/
 ouput.txt
 tree.txt
+runs/
+artifacts/
+fault_4_analysis_plots/
+
+# Test / temp outputs
+.pytest_cache/
+.pytest_tmp*/
+._pytest_tmp*/
+_pytest_tmp*/
+pytest-cache-files-*/
+pytest_tmp_run/
+tmp*/
+pycheck-*/
+pytest_d1.xml
+sandbox_test.xml
+
+# Local bootstrap / scratch
+.bootstrap_refresh/
+inbox/
