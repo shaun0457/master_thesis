@@ -198,17 +198,6 @@ The codebase is designed to be research-grade but production-shaped:
 
 ---
 
-## Research Background
-
-The thesis research behind this project is documented in [`docs/research_context/`](./docs/research_context/):
-
-- **01_Motivation** — industrial relevance and the case for multi-agent fault diagnosis
-- **02_Definitions** — key constructs: stability, cooperation quality, knowledge flow metrics
-- **03_Methods** — experimental framework, metric definitions, blackboard architecture
-- **04_Discussion** — transferability to manufacturing governance, limitations, future work
-
----
-
 ## License
 
 MIT

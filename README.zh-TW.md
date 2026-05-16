@@ -196,13 +196,6 @@ python eval/regression_gate.py
 - 透過結構化運行日誌與指標提供可觀測性
 - 以 Golden Eval 集進行回歸閘門驗證
 
-研究理論背景請參閱 [`docs/research_context/`](./docs/research_context/)：
-
-- **01_Motivation** — 工業應用相關性與多智能體故障診斷的立論依據
-- **02_Definitions** — 核心構念：穩定性、協作品質、知識流指標
-- **03_Methods** — 實驗框架、指標定義、黑板架構
-- **04_Discussion** — 研究結果在製造業治理的可移植性、限制與未來方向
-
 ---
 
 ## 授權
