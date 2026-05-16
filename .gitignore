@@ -66,3 +66,14 @@ sandbox_test.xml
 # Local bootstrap / scratch
 .bootstrap_refresh/
 inbox/
+
+# AI session management files (dev tooling, not portfolio content)
+AGENTS.md
+CLAUDE.md
+CODEx_MEMORY.md
+SESSION_PROGRESS.md
+SESSION_START.md
+WORKSPACE_INDEX.md
+
+# Stale dev artifacts
+folder_structure.txt
