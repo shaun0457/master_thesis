@@ -2,14 +2,14 @@
 import os, json, time, traceback, re, warnings
 from typing import Dict, Any, List, Optional
 from collections import Counter
-from bb_tools import bb_add_citations, bb_add_facts
+from agents.bb_tools import bb_add_citations, bb_add_facts
 from langgraph.graph import StateGraph, END
 from langchain_core.messages import HumanMessage, AIMessage, ToolMessage, SystemMessage, BaseMessage
 from langchain_core.prompts import ChatPromptTemplate
-from common import dbg, dbg_json
-import me_tools
-from metrics import init_metrics, note_tool_event, finalize_metrics, update_me_citation_metrics, _ensure_metrics
-from common import llm, AgentState, run_and_log_experiment
+from core.common import dbg, dbg_json
+from agents import me_tools
+from core.metrics import init_metrics, note_tool_event, finalize_metrics, update_me_citation_metrics, _ensure_metrics
+from core.common import llm, AgentState, run_and_log_experiment
 
 # 忽略来自 LangChain 底层的、与 Pydantic 相关的 UserWarning
 # import warnings, prompts
@@ -67,12 +67,12 @@ def create_me_executor(mode: str, tools: List, system_prompt: Optional[str] = No
     return prompt | llm.bind_tools(tools)
 
 def ME_node(state: AgentState, executor):
-    from llm_harness import SelfEvaluator
+    from core.llm_harness import SelfEvaluator
     print("\n[Node] >>> MachineExpert")
     snippet = _last_human_snippet(state)
     print("[ME][In] last human: %r" % snippet)
 
-    from harness_callback import HarnessCallback
+    from core.harness_callback import HarnessCallback
     res = executor.invoke(state, config={"callbacks": [HarnessCallback(state, "ME")]})
 
     # 兼容：有些 executor 直接回 dict，有些回單一 AIMessage
@@ -105,7 +105,7 @@ def ME_node(state: AgentState, executor):
     # SelfEvaluator（非阻塞）
     if last_ai_text and not getattr(executor, "_skip_self_eval", False):
         try:
-            from common import llm as _llm
+            from core.common import llm as _llm
             SelfEvaluator().evaluate(_llm, last_ai_text, "ME", state)
         except Exception:
             pass

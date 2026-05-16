@@ -119,7 +119,7 @@ def _messages_from_payload(payload: dict[str, Any], *, require_json_shape: bool)
 def build_gemini_extractor(model: str | None = None, temperature: float | None = 0.0) -> Callable[[dict[str, Any]], Any]:
     from langchain_google_genai import ChatGoogleGenerativeAI
 
-    from common import invoke_with_retry, llm
+    from core.common import invoke_with_retry, llm
 
     active_llm = llm
     if model:

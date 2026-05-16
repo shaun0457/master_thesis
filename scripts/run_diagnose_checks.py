@@ -51,7 +51,7 @@ def _seed_observations(client, *, source: str = "manual", n: int = 8, true_fault
 def smoke_inline_mock() -> int:
     _print_header("API Inline Smoke")
     _seed_env()
-    from diagnose_flow import DiagnosisResult
+    from simulation.diagnose_flow import DiagnosisResult
 
     with tempfile.TemporaryDirectory() as tmp:
         client = _build_client(Path(tmp))
@@ -83,7 +83,7 @@ def smoke_inline_mock() -> int:
 def smoke_window_mock() -> int:
     _print_header("API Window Smoke")
     _seed_env()
-    from diagnose_flow import DiagnosisResult
+    from simulation.diagnose_flow import DiagnosisResult
 
     with tempfile.TemporaryDirectory() as tmp:
         client = _build_client(Path(tmp))

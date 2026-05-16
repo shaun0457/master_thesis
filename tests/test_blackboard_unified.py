@@ -36,8 +36,7 @@ def test_bb_find_dataset_prefers_name_over_shared_topic(tmp_path, monkeypatch):
     obs_path.write_text("obs", encoding="utf-8")
     base_path.write_text("baseline", encoding="utf-8")
 
-    import bb_tools
-
+    from agents import bb_tools
     bb_tools.bb_register_dataset_path(
         run_id="bb-unified-find",
         name="obs_diag_demo",
@@ -68,7 +67,7 @@ def test_delegate_read_blackboard_reads_registry_and_syncs_state(tmp_path, monke
     dataset_path = tmp_path / "obs.parquet"
     dataset_path.write_text("obs", encoding="utf-8")
 
-    import bb_tools
+    from agents import bb_tools
     bb_tools.bb_register_dataset_path(
         run_id="bb-unified-read",
         name="obs_diag_demo",
@@ -78,7 +77,7 @@ def test_delegate_read_blackboard_reads_registry_and_syncs_state(tmp_path, monke
         created_by="SYSTEM",
     )
 
-    import delegate_tools
+    from agents import delegate_tools
     monkeypatch.setattr(delegate_tools, "get_run_logger", lambda: _DummyLogger())
     monkeypatch.setattr(delegate_tools, "emit_bb_read", lambda **kwargs: None)
     monkeypatch.setattr(delegate_tools, "note_tool_call", lambda **kwargs: None)
@@ -101,7 +100,7 @@ def test_delegate_write_blackboard_dataset_uses_canonical_registry(tmp_path, mon
     dataset_path = tmp_path / "merged.parquet"
     dataset_path.write_text("merged", encoding="utf-8")
 
-    import delegate_tools
+    from agents import delegate_tools
     monkeypatch.setattr(delegate_tools, "get_run_logger", lambda: _DummyLogger())
     monkeypatch.setattr(delegate_tools, "note_tool_call", lambda **kwargs: None)
     monkeypatch.setattr(delegate_tools, "emit_event", lambda *args, **kwargs: None)
@@ -123,7 +122,7 @@ def test_delegate_write_blackboard_dataset_uses_canonical_registry(tmp_path, mon
 
     assert "Successfully wrote" in message
 
-    import bb_tools
+    from agents import bb_tools
     datasets = bb_tools.bb_list_datasets_py("bb-unified-write")
     assert datasets[-1]["name"] == "merged_frame"
     assert datasets[-1]["ref"] == str(dataset_path)
@@ -131,7 +130,7 @@ def test_delegate_write_blackboard_dataset_uses_canonical_registry(tmp_path, mon
 
 
 def test_ds_prompt_includes_tool_boundary_and_windows_path_rules():
-    from context_assembler import DynamicContextAssembler
+    from core.context_assembler import DynamicContextAssembler
 
     prompt = DynamicContextAssembler().assemble_system_prompt("DS")
     assert "write_to_blackboard" in prompt

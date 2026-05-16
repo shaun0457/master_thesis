@@ -14,8 +14,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
 
 def test_callback_metrics():
-    from common import llm
-    from harness_callback import HarnessCallback
+    from core.common import llm
+    from core.harness_callback import HarnessCallback
 
     state: dict = {"messages": [], "metrics": {}}
     llm.invoke("Say 'ok'", config={"callbacks": [HarnessCallback(state, "test")]})

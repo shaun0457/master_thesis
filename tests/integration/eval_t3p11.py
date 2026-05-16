@@ -14,7 +14,7 @@ os.environ.setdefault("GOOGLE_API_KEY", "dummy-key-for-unit-test")
 
 def test_compute_cost_usd_with_real_tokens():
     """cost_usd must be a positive float when tokens > 0."""
-    from run_logger import _compute_cost_usd
+    from core.run_logger import _compute_cost_usd
     cost = _compute_cost_usd(10_000, 2_000)
     assert cost is not None, "Expected float, got None"
     assert cost > 0, f"Expected positive cost, got {cost}"
@@ -25,7 +25,7 @@ def test_compute_cost_usd_with_real_tokens():
 
 def test_compute_cost_usd_returns_none_for_zero_tokens():
     """cost_usd must be None (not 0.0) when no tokens captured — avoids fake $0.0000."""
-    from run_logger import _compute_cost_usd
+    from core.run_logger import _compute_cost_usd
     cost = _compute_cost_usd(0, 0)
     assert cost is None, f"Expected None for zero tokens, got {cost}"
     print("[PASS] compute_cost_usd(0, 0) = None (correctly signals no data)")
@@ -34,7 +34,7 @@ def test_compute_cost_usd_returns_none_for_zero_tokens():
 def test_extract_tokens_path1_llm_output():
     """_extract_tokens must read from llm_output.usage_metadata (primary path)."""
     from unittest.mock import MagicMock
-    from harness_callback import _extract_tokens
+    from core.harness_callback import _extract_tokens
     response = MagicMock()
     response.llm_output = {"usage_metadata": {"prompt_token_count": 500, "candidates_token_count": 150}}
     response.generations = []
@@ -46,7 +46,7 @@ def test_extract_tokens_path1_llm_output():
 def test_extract_tokens_path2_generation_info():
     """_extract_tokens must fall back to generation_info.usage_metadata."""
     from unittest.mock import MagicMock
-    from harness_callback import _extract_tokens
+    from core.harness_callback import _extract_tokens
     response = MagicMock()
     response.llm_output = {}
     gen = MagicMock()
@@ -60,7 +60,7 @@ def test_extract_tokens_path2_generation_info():
 def test_extract_tokens_path3_message_usage_metadata():
     """_extract_tokens must fall back to AIMessage.usage_metadata (new LangChain standard)."""
     from unittest.mock import MagicMock
-    from harness_callback import _extract_tokens
+    from core.harness_callback import _extract_tokens
     response = MagicMock()
     response.llm_output = {}
     gen = MagicMock()
@@ -76,7 +76,7 @@ def test_write_run_report_creates_markdown():
     """_write_run_report must create a run_report.md with cost and quality sections."""
     import tempfile
     from pathlib import Path
-    from run_logger import _write_run_report
+    from core.run_logger import _write_run_report
     with tempfile.TemporaryDirectory() as tmp:
         summary = {
             "run_id": "test-run-001",

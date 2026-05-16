@@ -11,8 +11,8 @@ def test_has_min_evidence_uses_state_run_id(tmp_path, monkeypatch):
     monkeypatch.setenv("RUNS_DIR", str(tmp_path))
     monkeypatch.setenv("RUN_ID", "evidence-source")
 
-    import bb_tools
-    from supervisor_workflow import _has_min_evidence
+    from agents import bb_tools
+    from agents.supervisor_workflow import _has_min_evidence
 
     bb_tools.bb_add_facts(
         run_id="evidence-source",
@@ -29,9 +29,8 @@ def test_read_me_fault_facts_diagnose_mode_avoids_faultnumber_leak(tmp_path, mon
     monkeypatch.setenv("RUN_ID", "diag-me-facts")
     monkeypatch.setenv("RUNS_DIR", str(tmp_path))
 
-    import bb_tools
-    import delegate_tools
-
+    from agents import bb_tools
+    from agents import delegate_tools
     bb_tools.bb_add_facts(
         run_id="diag-me-facts",
         facts=[{
@@ -57,9 +56,8 @@ def test_read_me_fault_facts_prefers_state_run_id_over_env(tmp_path, monkeypatch
     monkeypatch.setenv("RUN_ID", "old-run")
     monkeypatch.setenv("RUNS_DIR", str(tmp_path))
 
-    import bb_tools
-    import delegate_tools
-
+    from agents import bb_tools
+    from agents import delegate_tools
     bb_tools.bb_add_facts(
         run_id="old-run",
         facts=[{
@@ -94,7 +92,7 @@ def test_read_me_fault_facts_prefers_state_run_id_over_env(tmp_path, monkeypatch
 
 
 def test_router_after_de_requires_actual_delivery_before_handoff():
-    from de_workflow import router_after_de
+    from agents.de_workflow import router_after_de
 
     state = {
         "messages": [AIMessage(content="I could not find a dataset.", tool_calls=[])],
@@ -105,7 +103,7 @@ def test_router_after_de_requires_actual_delivery_before_handoff():
 
 
 def test_router_after_de_hands_off_after_successful_delivery():
-    from de_workflow import router_after_de
+    from agents.de_workflow import router_after_de
 
     delivered = json.dumps({"status": "ok", "df_payload": {"path": "datasets/merged.parquet"}, "rowcount": 12})
     state = {
@@ -120,7 +118,7 @@ def test_router_after_de_hands_off_after_successful_delivery():
 
 
 def test_router_after_tool_sql_query_is_not_ds_ready():
-    from de_workflow import router_after_tool
+    from agents.de_workflow import router_after_tool
 
     state = {
         "messages": [
@@ -138,7 +136,7 @@ def test_router_after_tool_sql_query_is_not_ds_ready():
 
 
 def test_router_after_tool_deliver_dataframe_success_is_ds_ready():
-    from de_workflow import router_after_tool
+    from agents.de_workflow import router_after_tool
 
     state = {
         "messages": [
@@ -160,8 +158,7 @@ def test_router_after_tool_deliver_dataframe_success_is_ds_ready():
 
 
 def test_route_and_execute_returns_messages_without_mutating_state(monkeypatch):
-    import router
-
+    from agents import router
     monkeypatch.setattr(
         router,
         "_exec_one_tool",
@@ -183,10 +180,9 @@ def test_route_and_execute_returns_messages_without_mutating_state(monkeypatch):
 
 
 def test_invoke_stage1_rebuilds_graph_for_state_bound_tools(monkeypatch):
-    import de_tools
-    import de_workflow
-    import delegate_tools
-
+    from agents import de_tools
+    from agents import de_workflow
+    from agents import delegate_tools
     created_tool_names = []
 
     class FakeGraph:
@@ -233,7 +229,7 @@ def test_router_root_defaults_to_workspace_runs(tmp_path, monkeypatch):
     monkeypatch.delenv("RUNS_DIR", raising=False)
     monkeypatch.chdir(tmp_path)
 
-    from router import _root
+    from agents.router import _root
 
     expected = os.path.join(str(tmp_path), "runs")
     assert _root() == expected

@@ -3,7 +3,7 @@ import logging
 import os, json, time, hashlib, atexit, uuid, traceback
 from contextlib import contextmanager
 from typing import Any, Dict, Optional, List
-from common import ensure_run_id
+from core.common import ensure_run_id
 
 _log = logging.getLogger(__name__)
 

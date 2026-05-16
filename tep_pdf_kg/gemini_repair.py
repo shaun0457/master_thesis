@@ -281,7 +281,7 @@ def _coerce_repair_decision(payload: Any) -> dict[str, Any]:
 def build_gemini_repair_extractor(model: str | None = None, temperature: float | None = 0.0) -> Callable[[dict[str, Any]], dict[str, Any]]:
     from langchain_google_genai import ChatGoogleGenerativeAI
 
-    from common import invoke_with_retry, llm
+    from core.common import invoke_with_retry, llm
 
     active_llm = llm
     if model:

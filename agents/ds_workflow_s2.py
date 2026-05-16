@@ -5,9 +5,9 @@ from langchain_core.prompts import ChatPromptTemplate
 from langgraph.graph import StateGraph, END
 import os
 # 假设 prompts.py 和 common.py 在可导入的路径中
-import prompts
-from common import llm, AgentState, dbg, dbg_json
-from metrics import note_tool_event, now_ms
+from core import prompts
+from core.common import llm, AgentState, dbg, dbg_json
+from core.metrics import note_tool_event, now_ms
 import json
 
 def _extract_text_content(msg: AIMessage) -> str:
@@ -63,12 +63,12 @@ def create_ds_executor(mode: str, tools: List, system_prompt: Optional[str] = No
 
 # --- 通用节点 (直接从旧文件复制) ---
 def ds_node(state: Dict[str, Any], executor):
-    from llm_harness import SelfEvaluator
+    from core.llm_harness import SelfEvaluator
     print("\n[Node] >>> DataScientist")
     snippet = _last_human_snippet(state)
     print("[DS][In] last human: %r" % snippet)
 
-    from harness_callback import HarnessCallback
+    from core.harness_callback import HarnessCallback
     res = executor.invoke(state, config={"callbacks": [HarnessCallback(state, "DS")]})
 
     msgs: list[BaseMessage] = []
@@ -98,7 +98,7 @@ def ds_node(state: Dict[str, Any], executor):
     # SelfEvaluator（非阻塞）
     if last_ai_text:
         try:
-            from common import llm as _llm
+            from core.common import llm as _llm
             SelfEvaluator().evaluate(_llm, last_ai_text, "DS", state)
         except Exception:
             pass

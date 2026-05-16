@@ -17,7 +17,7 @@ import pytest
 
 
 def test_parse_fault_id_handles_common_formats():
-    from diagnose_flow import _parse_fault_id
+    from simulation.diagnose_flow import _parse_fault_id
 
     assert _parse_fault_id("The predicted fault is IDV_4.") == 4
     assert _parse_fault_id("Conclusion: fault 11") == 11
@@ -27,7 +27,7 @@ def test_parse_fault_id_handles_common_formats():
 
 
 def test_parse_fault_id_rejects_out_of_range_and_noise():
-    from diagnose_flow import _parse_fault_id
+    from simulation.diagnose_flow import _parse_fault_id
 
     assert _parse_fault_id("") is None
     assert _parse_fault_id("no fault detected") is None
@@ -36,7 +36,7 @@ def test_parse_fault_id_rejects_out_of_range_and_noise():
 
 
 def test_diagnose_missing_observation_returns_error():
-    from diagnose_flow import diagnose
+    from simulation.diagnose_flow import diagnose
 
     result = diagnose("/nonexistent/path.parquet")
     assert result.error and "not found" in result.error
@@ -83,7 +83,7 @@ def _fake_graph_with_final_answer(answer_text: str, candidates: list[dict] | Non
 
 
 def test_diagnose_persists_to_buffer_and_parses_fault(tmp_path):
-    from diagnose_flow import diagnose
+    from simulation.diagnose_flow import diagnose
     from scripts.init_live_buffer import init as init_buffer
 
     obs_path = _make_obs_parquet(tmp_path)
@@ -131,7 +131,7 @@ def test_diagnose_persists_to_buffer_and_parses_fault(tmp_path):
 
 
 def test_diagnose_handles_graph_exception(tmp_path):
-    from diagnose_flow import diagnose
+    from simulation.diagnose_flow import diagnose
     from scripts.init_live_buffer import init as init_buffer
 
     obs_path = _make_obs_parquet(tmp_path)

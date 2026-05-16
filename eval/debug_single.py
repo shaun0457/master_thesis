@@ -6,8 +6,8 @@ sys.path.insert(0, str(REPO_ROOT))
 from dotenv import load_dotenv
 load_dotenv(REPO_ROOT / ".env")
 
-from common import AgentState
-from supervisor_workflow import build_team_graph
+from core.common import AgentState
+from agents.supervisor_workflow import build_team_graph
 from langchain_core.messages import HumanMessage, AIMessage
 
 graph = build_team_graph()

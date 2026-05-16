@@ -21,7 +21,7 @@ _BASE = os.path.dirname(_HERE)
 if _BASE not in sys.path:
     sys.path.insert(0, _BASE)
 
-from tep_knowledge import FAULT_SENSORS  # noqa: E402
+from knowledge.tep_knowledge import FAULT_SENSORS  # noqa: E402
 
 UPSERT_SENSOR = """
 MERGE (s:Sensor {name: $name})

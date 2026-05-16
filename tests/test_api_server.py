@@ -67,7 +67,7 @@ def test_diagnose_requires_path_or_rows(api_client):
 
 
 def test_diagnose_with_inline_rows_calls_orchestrator(api_client, tmp_path):
-    from diagnose_flow import DiagnosisResult
+    from simulation.diagnose_flow import DiagnosisResult
 
     fake_result = DiagnosisResult(
         run_id="diag_abc",

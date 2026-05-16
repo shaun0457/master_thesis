@@ -17,6 +17,9 @@ from __future__ import annotations
 import json
 import os
 import sqlite3
+
+from dotenv import load_dotenv
+load_dotenv()
 import tempfile
 import time
 import uuid
@@ -218,7 +221,7 @@ def health() -> HealthResponse:
     neo4j_ok = bool(os.environ.get("NEO4J_URI"))
     if neo4j_ok:
         try:
-            from neo4j_kg import _get_kg_driver
+            from knowledge.neo4j_kg import _get_kg_driver
             driver = _get_kg_driver()
             with driver.session() as session:
                 session.run("RETURN 1").consume()
@@ -307,7 +310,7 @@ def list_diagnoses(limit: int = 20) -> dict[str, Any]:
 @app.post("/diagnose", response_model=DiagnoseResponse)
 def diagnose_endpoint(req: DiagnoseRequest) -> DiagnoseResponse:
     obs_path, obs_ids = _materialise_observation(req)
-    from diagnose_flow import diagnose as run_diagnose
+    from simulation.diagnose_flow import diagnose as run_diagnose
     result = run_diagnose(
         observation_path=obs_path,
         true_fault=req.true_fault,
@@ -357,7 +360,7 @@ def diagnose_window(req: WindowDiagnoseRequest) -> DiagnoseResponse:
     tmp.close()
     df.to_parquet(tmp.name, index=False)
 
-    from diagnose_flow import diagnose as run_diagnose
+    from simulation.diagnose_flow import diagnose as run_diagnose
     result = run_diagnose(
         observation_path=tmp.name,
         true_fault=inferred_truth,

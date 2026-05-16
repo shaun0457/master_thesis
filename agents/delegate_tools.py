@@ -2,19 +2,19 @@ import json
 import inspect
 import uuid, os as _os
 from langchain_core.messages import HumanMessage, AIMessage
-from prompt_builder import get_system_prompt
-from common import bb_snapshot_text, set_global_seeds, get_seed
-from run_logger import get_run_logger, note_tool_call, emit_bb_write, emit_bb_read, emit_event, emit_compliance
+from core.prompt_builder import get_system_prompt
+from core.common import bb_snapshot_text, set_global_seeds, get_seed
+from core.run_logger import get_run_logger, note_tool_call, emit_bb_write, emit_bb_read, emit_event, emit_compliance
 import os, datetime
 from typing import Dict, Any, Tuple, List, Literal, Optional
 from pydantic import BaseModel, Field
 from langchain.tools import tool
-from run_logger import get_run_logger, note_tool_call, emit_bb_write, emit_bb_read
-import bb_tools
+from core.run_logger import get_run_logger, note_tool_call, emit_bb_write, emit_bb_read
+from agents import bb_tools
 import time
-from metrics import note_tool_event
-from run_logger import emit_bb_write, emit_bb_read, note_tool_call
-from subagent_contracts import (
+from core.metrics import note_tool_event
+from core.run_logger import emit_bb_write, emit_bb_read, note_tool_call
+from agents.subagent_contracts import (
     ContextPack,
     DelegateRequest,
     HandoffValidationResult,
@@ -1012,7 +1012,7 @@ def _invoke_stage1(
         graph = _GRAPH_CACHE[cache_key]
     else:
         try:
-            from common import AgentState  # 你的專案內的 AgentState；如果沒有就 fallback
+            from core.common import AgentState  # 你的專案內的 AgentState；如果沒有就 fallback
         except ImportError:
             AgentState = dict
 
@@ -1095,7 +1095,7 @@ def _invoke_stage1(
         os.environ["DATABASE_URL"] = state["db_url"]
 
     # === Anchor 方案：bb_index + task contract 作為最後一則 HumanMessage，不被壓縮 ===
-    from context_assembler import DynamicContextAssembler as _DCA
+    from core.context_assembler import DynamicContextAssembler as _DCA
     _ca = _DCA()
     if context_pack is None:
         task_text = intro_msgs[-1].content if intro_msgs else "Please proceed with the delegated task."
@@ -1379,7 +1379,7 @@ def _summarize_out(agent: str, out_state: Dict[str, Any], max_items: int = 4) ->
     """
     # (0) Pydantic primary path
     try:
-        from structured_outputs import MEReport, DSReport, DEReport
+        from core.structured_outputs import MEReport, DSReport, DEReport
         import re as _re
         _agent_upper = agent.upper()
         _report_cls = {"ME": MEReport, "DS": DSReport, "DE": DEReport}.get(_agent_upper)
@@ -1460,7 +1460,7 @@ def _summarize_out(agent: str, out_state: Dict[str, Any], max_items: int = 4) ->
     # (4) 補上 1–2 行 citation（若有）
     if lines:
         try:
-            from bb_tools import _load as _bb_load
+            from agents.bb_tools import _load as _bb_load
             reg = _bb_load(os.getenv("RUN_ID"))
             cits = reg.get("citations", [])[-2:]
             if cits:
@@ -1738,7 +1738,7 @@ def delegate_to_me(question: str, state: Dict[str, Any],
     with _TopicCtx(state, topic_id, owner):
         rag_note = ""
         try:
-            import me_tools
+            from agents import me_tools
             me_tools.init_me_index_from_dir(state.get("pdf_dir", "./TEP_docs"))
         except Exception as e:
             rag_note = (
@@ -1845,7 +1845,7 @@ def _invoke_stage1(
     policy = POLICY
     role_card_prompt = get_system_prompt(agent, policy)
     try:
-        from common import AgentState
+        from core.common import AgentState
     except ImportError:
         AgentState = dict
 
@@ -1910,7 +1910,7 @@ def _invoke_stage1(
     if state.get("db_url"):
         os.environ["DATABASE_URL"] = state["db_url"]
 
-    from context_assembler import DynamicContextAssembler as _DCA
+    from core.context_assembler import DynamicContextAssembler as _DCA
 
     _ca = _DCA()
     history_msgs = state.get("messages", [])
@@ -2000,7 +2000,7 @@ def _run_subgraph(
     )
     _record_ticket(state, ticket)
 
-    from context_assembler import DynamicContextAssembler as _DCA
+    from core.context_assembler import DynamicContextAssembler as _DCA
 
     assembler = _DCA()
     role_prompt = assembler.assemble_system_prompt(agent)
@@ -2115,7 +2115,7 @@ def delegate_to_me(
     with _TopicCtx(state, topic_id, owner):
         rag_note = ""
         try:
-            import me_tools
+            from agents import me_tools
             me_tools.init_me_index_from_dir(state.get("pdf_dir", "./TEP_docs"))
         except Exception as e:
             rag_note = (

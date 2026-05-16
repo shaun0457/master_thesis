@@ -3,22 +3,22 @@ import json, os, uuid, hashlib, threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any, Dict, Optional, List, Set
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage, ToolMessage
-from delegate_tools import delegate_to_me, delegate_to_de, delegate_to_ds, continue_agent
+from agents.delegate_tools import delegate_to_me, delegate_to_de, delegate_to_ds, continue_agent
 try:
     # 盡量沿用你原本的（若存在）；沒有就設為 None
-    from common import ensure_topic_in_args as _ensure_topic_in_args_orig  # type: ignore
+    from core.common import ensure_topic_in_args as _ensure_topic_in_args_orig  # type: ignore
 except Exception:
     _ensure_topic_in_args_orig = None
 import time
-from metrics import note_tool_event
-from run_logger import  note_tool_call
+from core.metrics import note_tool_event
+from core.run_logger import note_tool_call
 try:
     import common as _COMMON  # expects (state)
 except Exception:
     _ensure_run_id_state = None
-from run_logger import emit_event, _now_ms, new_uuid
+from core.run_logger import emit_event, _now_ms, new_uuid
 import traceback
-from subagent_contracts import (
+from agents.subagent_contracts import (
     DelegateRequest,
     SubagentResultEnvelope,
     build_ticket,

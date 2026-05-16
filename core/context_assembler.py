@@ -7,7 +7,7 @@ Dynamic context (blackboard snapshot, task) is injected as HumanMessage, not sys
 from __future__ import annotations
 from typing import List, Dict, Any, Optional
 from langchain_core.messages import BaseMessage, HumanMessage, AIMessage, ToolMessage
-from subagent_contracts import (
+from agents.subagent_contracts import (
     ContextPack,
     SubagentTaskTicket,
     artifact_refs_from_blackboard,
@@ -165,7 +165,7 @@ class DynamicContextAssembler:
 
         # Blackboard snapshot (if available)
         try:
-            from common import bb_snapshot_text
+            from core.common import bb_snapshot_text
             bb_snap = bb_snapshot_text(state, max_items=5)
             if bb_snap and bb_snap.strip():
                 parts.append(f"[Blackboard]\n{bb_snap}")

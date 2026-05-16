@@ -15,8 +15,8 @@ from typing import Any, Dict, List, Optional
 
 from langchain_core.messages import BaseMessage, HumanMessage
 
-from structured_outputs import SelfEvalResult
-from context_assembler import DynamicContextAssembler
+from core.structured_outputs import SelfEvalResult
+from core.context_assembler import DynamicContextAssembler
 
 _assembler = DynamicContextAssembler()
 

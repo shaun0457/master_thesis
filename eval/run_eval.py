@@ -72,8 +72,8 @@ def _run_real(item: dict) -> dict:
     os.environ.setdefault("RUN_ID", f"eval-{uuid.uuid4().hex[:8]}")
     os.environ.setdefault("TASK_ID", item["id"])
 
-    from common import AgentState
-    from supervisor_workflow import build_team_graph
+    from core.common import AgentState
+    from agents.supervisor_workflow import build_team_graph
     from langchain_core.messages import HumanMessage
 
     graph = build_team_graph()

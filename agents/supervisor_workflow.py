@@ -3,12 +3,12 @@ from typing import Dict, Any, List
 from langgraph.graph import StateGraph, END
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.messages import HumanMessage, ToolMessage, BaseMessage, AIMessage
-from prompt_builder import get_system_prompt
-from common import llm, AgentState
-from supervisor_tools import get_supervisor_tools
+from core.prompt_builder import get_system_prompt
+from core.common import llm, AgentState
+from agents.supervisor_tools import get_supervisor_tools
 # from supervisor_prompts import SUPERVISOR_SYSTEM_PROMPT
-from router import route_and_execute
-from bb_tools import get_bb_snapshot
+from agents.router import route_and_execute
+from agents.bb_tools import get_bb_snapshot
 
 
 # ----- 辅助函数 (保持不变) -----
@@ -82,8 +82,8 @@ def post_answer_node(state: Dict[str, Any]):
     if not answer_text:
         return {}
     try:
-        from judge import JudgeLLM
-        from metrics import note_judge_result, compute_evidence_utilization
+        from core.judge import JudgeLLM
+        from core.metrics import note_judge_result, compute_evidence_utilization
         score = JudgeLLM().judge_sync(llm, state, answer_text)
         note_judge_result(state, score)
         if score:
@@ -98,7 +98,7 @@ def post_answer_node(state: Dict[str, Any]):
 
 
 def supervisor_node(state: Dict[str, Any]):
-    from harness_callback import HarnessCallback
+    from core.harness_callback import HarnessCallback
     print("\n[Node] >>> Supervisor")
     state.setdefault("phase", "initial")
     _ensure_init(state)

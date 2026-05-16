@@ -67,7 +67,7 @@ class HarnessCallback(BaseCallbackHandler):
 
     def on_llm_end(self, response: LLMResult, **kwargs):
         latency = time.time() * 1000 - self._t0
-        from metrics import _ensure_metrics
+        from core.metrics import _ensure_metrics
         m = _ensure_metrics(self.state)
         m["llm_calls_total"] = m.get("llm_calls_total", 0) + 1
         m["llm_latency_ms_sum"] = m.get("llm_latency_ms_sum", 0.0) + latency

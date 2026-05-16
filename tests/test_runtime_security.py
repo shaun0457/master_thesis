@@ -27,7 +27,7 @@ class _DummyLogger:
 def test_sql_db_query_rejects_non_select_and_allows_select(monkeypatch):
     monkeypatch.setenv("GOOGLE_API_KEY", "dummy-key-for-unit-test")
 
-    import de_tools
+    from agents import de_tools
     monkeypatch.setattr(de_tools, "get_run_logger", lambda: _DummyLogger())
     executed = []
 
@@ -88,7 +88,7 @@ def test_sql_db_query_returns_df_payload_after_autoregister(monkeypatch):
     monkeypatch.setenv("DE_AUTOREGISTER", "1")
     monkeypatch.setenv("GOOGLE_API_KEY", "dummy-key-for-unit-test")
 
-    import de_tools
+    from agents import de_tools
     monkeypatch.setattr(de_tools, "get_run_logger", lambda: _DummyLogger())
 
     class FakeResult:
@@ -138,7 +138,7 @@ def test_sql_db_query_returns_df_payload_after_autoregister(monkeypatch):
 def test_execute_python_code_does_not_forward_secret_env(monkeypatch):
     monkeypatch.setenv("GOOGLE_API_KEY", "super-secret")
 
-    import ds_tools
+    from agents import ds_tools
     monkeypatch.setattr(ds_tools, "get_run_logger", lambda: _DummyLogger())
 
     result = ds_tools._execute_python_subprocess(
@@ -154,7 +154,7 @@ def test_bb_write_concurrent_writes_preserve_all_records(monkeypatch):
     monkeypatch.setenv("RUNS_DIR", os.getcwd())
     monkeypatch.setenv("GOOGLE_API_KEY", "dummy-key-for-unit-test")
 
-    import bb_tools
+    from agents import bb_tools
     monkeypatch.setattr(bb_tools, "emit_bb_write", lambda **kwargs: None)
     monkeypatch.setattr(bb_tools, "note_tool_call", lambda **kwargs: None)
 

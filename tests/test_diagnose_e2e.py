@@ -29,7 +29,7 @@ def api_with_seeded_buffer(tmp_path, monkeypatch):
 
 
 def _fake_diagnose_result(predicted=4, true_fault=4, run_id_suffix=""):
-    from diagnose_flow import DiagnosisResult
+    from simulation.diagnose_flow import DiagnosisResult
     import uuid
     return DiagnosisResult(
         run_id=f"diag_e2e_{predicted}_{run_id_suffix or uuid.uuid4().hex[:6]}",
@@ -54,7 +54,7 @@ def _fake_diagnose_result(predicted=4, true_fault=4, run_id_suffix=""):
 
 def _persist_via_real_helper(result, buffer_db: str, obs_ids):
     """Use the real _persist_diagnosis from diagnose_flow."""
-    from diagnose_flow import _persist_diagnosis
+    from simulation.diagnose_flow import _persist_diagnosis
     _persist_diagnosis(buffer_db, result, obs_ids=obs_ids)
 
 

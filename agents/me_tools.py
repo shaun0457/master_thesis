@@ -1,12 +1,12 @@
 import json, re, os, random
 from typing import Any, Dict, List, Optional, Callable
-import bb_tools
+from agents import bb_tools
 from langchain_core.tools import tool
 from langchain_core.messages import SystemMessage, HumanMessage
 from langchain_core.prompts import ChatPromptTemplate
-from run_logger import get_run_logger
-from me_docs import DocIndex, read_chunk, load_or_build_index
-from common import llm, get_seed, set_global_seeds
+from core.run_logger import get_run_logger
+from agents.me_docs import DocIndex, read_chunk, load_or_build_index
+from core.common import llm, get_seed, set_global_seeds
 
 DOC_INDEX: Optional[DocIndex] = None
 
@@ -473,7 +473,7 @@ def kg_query_fault(fault_id: int) -> str:
         JSON with fault description, diagnostic_sensors, summary_md, context_chunks,
         evidence (with source_doc + page), and source.
     """
-    from neo4j_kg import query_fault_kg
+    from knowledge.neo4j_kg import query_fault_kg
     result = query_fault_kg(fault_id)
     return json.dumps(result, ensure_ascii=False)
 
@@ -493,7 +493,7 @@ def kg_match_fault_by_sensors(sensors: list[str], top_k: int = 3) -> str:
         JSON list of candidate faults sorted by Jaccard score, each with
         fault_id, fault_name, description, score, matched, source.
     """
-    from neo4j_kg import match_fault_by_sensors
+    from knowledge.neo4j_kg import match_fault_by_sensors
     result = match_fault_by_sensors(sensors or [], top_k=int(top_k))
     return json.dumps(result, ensure_ascii=False)
 

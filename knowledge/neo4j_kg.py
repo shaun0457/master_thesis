@@ -92,7 +92,7 @@ def query_fault_kg(fault_id: int) -> dict[str, Any]:
         summary_md, evidence, context_chunks, source.
         Falls back to tep_knowledge on any Neo4j failure.
     """
-    from tep_knowledge import lookup_fault
+    from knowledge.tep_knowledge import lookup_fault
 
     # Local baseline is always computed (authoritative for diagnostic_sensors)
     local = lookup_fault(fault_id)
@@ -161,7 +161,7 @@ def match_fault_by_sensors(sensors: list[str], top_k: int = 3) -> list[dict]:
         List of {"fault_id", "fault_name", "description", "score", "matched", "source"}
         sorted by score descending. Empty list on empty input.
     """
-    from tep_knowledge import match_fault_by_sensors_local
+    from knowledge.tep_knowledge import match_fault_by_sensors_local
 
     if not sensors:
         return []

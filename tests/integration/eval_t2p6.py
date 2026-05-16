@@ -14,7 +14,7 @@ os.environ.setdefault("GOOGLE_API_KEY", "dummy-key-for-unit-test")
 
 def test_fact_entry_helper():
     """_fact_entry must produce correct provenance dict."""
-    from bb_tools import _fact_entry
+    from agents.bb_tools import _fact_entry
     e = _fact_entry("Fault 4 is reactor cooling water", "ME", "synthesize_and_cite", 0.9)
     assert e["claim"] == "Fault 4 is reactor cooling water"
     assert e["agent"] == "ME"
@@ -28,7 +28,7 @@ def test_bb_add_facts_normalizes_strings():
     """bb_add_facts must wrap plain strings in provenance dict."""
     import os as _os
     _os.environ["RUN_ID"] = "test_t2p6_norm"
-    from bb_tools import bb_add_facts, get_bb_snapshot
+    from agents.bb_tools import bb_add_facts, get_bb_snapshot
     bb_add_facts("test_t2p6_norm", ["Plain string fact"], agent="ME", source_tool="test_tool")
     snap = get_bb_snapshot("test_t2p6_norm")
     facts = snap.get("facts", [])
@@ -43,7 +43,7 @@ def test_bb_add_facts_normalizes_strings():
 
 def test_has_min_evidence_with_provenance():
     """supervisor_workflow._has_min_evidence must work with provenance dict facts."""
-    from supervisor_workflow import _has_min_evidence
+    from agents.supervisor_workflow import _has_min_evidence
     state = {"blackboard": {"facts": [
         {"claim": "Fault 4 is reactor cooling water step change",
          "agent": "ME", "confidence": 0.9, "source_tool": "retrieve_knowledge", "turn": 1}

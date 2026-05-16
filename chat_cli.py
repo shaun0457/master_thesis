@@ -8,13 +8,13 @@ import datetime
 import traceback
 from typing import Any, Dict, List
 import argparse
-from tee_logs import tee_console_logs, read_tail
-from common import ensure_run_id, get_env_int, get_seed
+from core.tee_logs import tee_console_logs, read_tail
+from core.common import ensure_run_id, get_env_int, get_seed
 from langchain_core.messages import HumanMessage, AIMessage, ToolMessage, BaseMessage
-from metrics import init_metrics, finalize_metrics, update_me_citation_metrics
-from run_logger import get_run_logger, begin_run, emit_run_meta, emit_outcome, end_run
+from core.metrics import init_metrics, finalize_metrics, update_me_citation_metrics
+from core.run_logger import get_run_logger, begin_run, emit_run_meta, emit_outcome, end_run
 # 假设 supervisor_workflow.py 已经包含了我们之前讨论的 Correction Node 版本
-from supervisor_workflow import build_team_graph
+from agents.supervisor_workflow import build_team_graph
 
 LOG_DIR = "interactive_logs"
 RUN_LOG_DIR = "run_logs"
@@ -225,7 +225,7 @@ def main():
 
         # 顯示 system prompt token 估算
         try:
-            from context_assembler import DynamicContextAssembler
+            from core.context_assembler import DynamicContextAssembler
             _asm = DynamicContextAssembler()
             for _ag in ("Supervisor", "ME", "DE", "DS"):
                 _sp = _asm.assemble_system_prompt(_ag)
@@ -346,7 +346,7 @@ def main():
                                 cache_hits = m.get("cache_hits", 0)
                                 print(f"[Usage] tokens_in={tokens_in} tokens_out={tokens_out} "
                                       f"llm_latency={latency:.0f}ms cache_hits={cache_hits}")
-                                from run_logger import _compute_cost_usd
+                                from core.run_logger import _compute_cost_usd
                                 cost = _compute_cost_usd(tokens_in, tokens_out)
                                 if cost is not None:
                                     print(f"[Cost] ${cost:.4f}  (in={tokens_in:,} × $1.25/M  out={tokens_out:,} × $10.00/M)")

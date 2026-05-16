@@ -11,7 +11,7 @@ from typing import Any, Dict, Optional
 
 from langchain_core.messages import HumanMessage
 
-from structured_outputs import JudgeScore
+from core.structured_outputs import JudgeScore
 
 
 def _extract_json(text: str) -> str:

@@ -2,12 +2,12 @@
 import re, uuid, time
 from sqlalchemy import create_engine, text, inspect
 from langchain.tools import tool
-from bb_tools import bb_register_dataset, bb_register_dataset_path
+from agents.bb_tools import bb_register_dataset, bb_register_dataset_path
 import os, json, pandas as pd
 from typing import Dict, Any, List, Optional
-from run_logger import get_run_logger
-from bb_tools import _write_to_blackboard_impl as _bb_write   # 程式 API 版
-from bb_tools import bb_register_dataset_path
+from core.run_logger import get_run_logger
+from agents.bb_tools import _write_to_blackboard_impl as _bb_write   # 程式 API 版
+from agents.bb_tools import bb_register_dataset_path
 
 
 
@@ -420,7 +420,7 @@ def deliver_dataframe(df_json: str) -> str:
         # 優先用 helper；失敗再退回 Tool 版本
         artifact_id = ""
         try:
-            from bb_tools import bb_register_dataset_path
+            from agents.bb_tools import bb_register_dataset_path
             reg = bb_register_dataset_path(
                 run_id,
                 ref["name"],
@@ -432,7 +432,7 @@ def deliver_dataframe(df_json: str) -> str:
             artifact_id = ((reg or {}).get("dataset") or {}).get("artifact_id", "")
         except Exception:
             try:
-                from bb_tools import bb_register_dataset
+                from agents.bb_tools import bb_register_dataset
                 bb_register_dataset.invoke({
                     "ref": parquet_path, "fmt": "parquet", "rows": int(len(df)),
                     "columns": list(map(str, df.columns))

@@ -6,7 +6,7 @@ from langchain_core.messages import HumanMessage
 
 
 def test_judge_sync_returns_score(mock_llm_returning_judge_json, mock_state):
-    from judge import JudgeLLM
+    from core.judge import JudgeLLM
     mock_state["messages"] = [HumanMessage(content="What causes fault 4 in TEP?")]
     judge = JudgeLLM()
     score = judge.judge_sync(mock_llm_returning_judge_json, mock_state, "The answer is X.")
@@ -19,7 +19,7 @@ def test_judge_sync_returns_score(mock_llm_returning_judge_json, mock_state):
 
 
 def test_judge_sync_sets_triggered_flag(mock_llm_returning_judge_json, mock_state):
-    from judge import JudgeLLM
+    from core.judge import JudgeLLM
     mock_state["messages"] = [HumanMessage(content="test question")]
     judge = JudgeLLM()
     judge.judge_sync(mock_llm_returning_judge_json, mock_state, "some answer")
@@ -27,7 +27,7 @@ def test_judge_sync_sets_triggered_flag(mock_llm_returning_judge_json, mock_stat
 
 
 def test_judge_sync_writes_scores_to_metrics(mock_llm_returning_judge_json, mock_state):
-    from judge import JudgeLLM
+    from core.judge import JudgeLLM
     mock_state["messages"] = [HumanMessage(content="test question")]
     judge = JudgeLLM()
     judge.judge_sync(mock_llm_returning_judge_json, mock_state, "some answer")
@@ -38,7 +38,7 @@ def test_judge_sync_writes_scores_to_metrics(mock_llm_returning_judge_json, mock
 
 
 def test_judge_sync_returns_none_on_garbage(mock_llm_returning_garbage, mock_state):
-    from judge import JudgeLLM
+    from core.judge import JudgeLLM
     mock_state["messages"] = [HumanMessage(content="test question")]
     judge = JudgeLLM()
     result = judge.judge_sync(mock_llm_returning_garbage, mock_state, "some answer")
@@ -46,7 +46,7 @@ def test_judge_sync_returns_none_on_garbage(mock_llm_returning_garbage, mock_sta
 
 
 def test_judge_sync_does_not_crash_on_garbage(mock_llm_returning_garbage, mock_state):
-    from judge import JudgeLLM
+    from core.judge import JudgeLLM
     mock_state["messages"] = [HumanMessage(content="test question")]
     judge = JudgeLLM()
     try:
@@ -56,7 +56,7 @@ def test_judge_sync_does_not_crash_on_garbage(mock_llm_returning_garbage, mock_s
 
 
 def test_judge_does_not_set_triggered_on_failure(mock_llm_returning_garbage, mock_state):
-    from judge import JudgeLLM
+    from core.judge import JudgeLLM
     mock_state["messages"] = [HumanMessage(content="test question")]
     judge = JudgeLLM()
     judge.judge_sync(mock_llm_returning_garbage, mock_state, "some answer")
@@ -64,7 +64,7 @@ def test_judge_does_not_set_triggered_on_failure(mock_llm_returning_garbage, moc
 
 
 def test_judge_prompt_includes_question(mock_llm_returning_judge_json, mock_state):
-    from judge import JudgeLLM
+    from core.judge import JudgeLLM
     question = "What is the reactor feed ratio in TEP?"
     mock_state["messages"] = [HumanMessage(content=question)]
     judge = JudgeLLM()
@@ -75,7 +75,7 @@ def test_judge_prompt_includes_question(mock_llm_returning_judge_json, mock_stat
 
 
 def test_judge_prompt_includes_answer(mock_llm_returning_judge_json, mock_state):
-    from judge import JudgeLLM
+    from core.judge import JudgeLLM
     mock_state["messages"] = [HumanMessage(content="question")]
     judge = JudgeLLM()
     answer = "The separator pressure is 2700 kPa."
@@ -86,7 +86,7 @@ def test_judge_prompt_includes_answer(mock_llm_returning_judge_json, mock_state)
 
 
 def test_judge_works_with_empty_message_history(mock_llm_returning_judge_json, mock_state):
-    from judge import JudgeLLM
+    from core.judge import JudgeLLM
     mock_state["messages"] = []  # no messages
     judge = JudgeLLM()
     score = judge.judge_sync(mock_llm_returning_judge_json, mock_state, "some answer")

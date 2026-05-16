@@ -201,10 +201,10 @@ def diagnose(
     """Run a single diagnosis on an unlabeled observation parquet."""
     # Lazy imports — these trigger GOOGLE_API_KEY validation
     from langchain_core.messages import HumanMessage
-    from common import ensure_run_id
-    from metrics import init_metrics
-    from bb_tools import bb_register_dataset_path, sync_blackboard_state
-    from supervisor_workflow import build_team_graph
+    from core.common import ensure_run_id
+    from core.metrics import init_metrics
+    from agents.bb_tools import bb_register_dataset_path, sync_blackboard_state
+    from agents.supervisor_workflow import build_team_graph
 
     run_id = f"diag_{uuid.uuid4().hex[:10]}"
     ts = time.time()

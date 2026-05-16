@@ -40,7 +40,7 @@ def test_window_returns_404_when_empty(api_client):
 
 
 def test_window_calls_diagnose_with_last_n_rows(api_client):
-    from diagnose_flow import DiagnosisResult
+    from simulation.diagnose_flow import DiagnosisResult
 
     _seed_observations(api_client, n=8)
 
@@ -75,7 +75,7 @@ def test_window_calls_diagnose_with_last_n_rows(api_client):
 
 
 def test_window_source_filter(api_client):
-    from diagnose_flow import DiagnosisResult
+    from simulation.diagnose_flow import DiagnosisResult
 
     _seed_observations(api_client, source="simulator", n=3, true_fault=4)
     _seed_observations(api_client, source="manual", n=2, true_fault=8)
@@ -112,7 +112,7 @@ def test_window_request_validation_bounds(api_client):
 
 
 def test_window_explicit_true_fault_overrides_buffer(api_client):
-    from diagnose_flow import DiagnosisResult
+    from simulation.diagnose_flow import DiagnosisResult
 
     _seed_observations(api_client, n=4, true_fault=4)
 

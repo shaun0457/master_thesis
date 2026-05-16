@@ -14,7 +14,7 @@ import pytest
 # ----------------------- Confidence calibration ----------------------- #
 
 def test_weighted_confidence_full_when_no_runner_up():
-    from diagnose_flow import _weighted_confidence
+    from simulation.diagnose_flow import _weighted_confidence
     candidates = [
         {"fault_id": 4, "score": 1.0, "matched": ["xmeas_9"]},
     ]
@@ -24,7 +24,7 @@ def test_weighted_confidence_full_when_no_runner_up():
 
 
 def test_weighted_confidence_drops_when_runner_up_close():
-    from diagnose_flow import _weighted_confidence
+    from simulation.diagnose_flow import _weighted_confidence
     candidates = [
         {"fault_id": 4,  "score": 1.0, "matched": ["xmeas_9"]},
         {"fault_id": 11, "score": 0.9, "matched": ["xmeas_9"]},
@@ -35,17 +35,17 @@ def test_weighted_confidence_drops_when_runner_up_close():
 
 
 def test_weighted_confidence_handles_none_predicted():
-    from diagnose_flow import _weighted_confidence
+    from simulation.diagnose_flow import _weighted_confidence
     assert _weighted_confidence([{"fault_id": 4, "score": 1.0}], predicted=None) is None
 
 
 def test_weighted_confidence_handles_empty_candidates():
-    from diagnose_flow import _weighted_confidence
+    from simulation.diagnose_flow import _weighted_confidence
     assert _weighted_confidence([], predicted=4) is None
 
 
 def test_weighted_confidence_zero_base():
-    from diagnose_flow import _weighted_confidence
+    from simulation.diagnose_flow import _weighted_confidence
     candidates = [{"fault_id": 4, "score": 0.0, "matched": []}]
     assert _weighted_confidence(candidates, predicted=4) == 0.0
 

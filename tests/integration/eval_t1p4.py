@@ -14,7 +14,7 @@ os.environ.setdefault("GOOGLE_API_KEY", "dummy-key-for-unit-test")
 
 def test_compress_messages_is_called():
     """Verify context_assembler.compress_messages is imported in delegate_tools."""
-    import delegate_tools
+    from agents import delegate_tools
     import inspect
     src = inspect.getsource(delegate_tools._invoke_stage1)
     assert "compress_messages" in src, (
@@ -25,7 +25,7 @@ def test_compress_messages_is_called():
 
 def test_long_history_is_compressed():
     """Long message history must be shortened before sub-state is built."""
-    from context_assembler import DynamicContextAssembler
+    from core.context_assembler import DynamicContextAssembler
     from langchain_core.messages import HumanMessage, ToolMessage
 
     ca = DynamicContextAssembler()

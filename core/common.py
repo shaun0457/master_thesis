@@ -418,7 +418,7 @@ def bb_snapshot_text(state: dict, max_items: int = 3) -> str:
     # 2) 檔案黑板（單一事實來源）
     bb_file = {}
     try:
-        from bb_tools import get_bb_snapshot as _bb_get_snapshot  # 只讀，不影響現有寫入
+        from agents.bb_tools import get_bb_snapshot as _bb_get_snapshot  # 只讀，不影響現有寫入
         run_id = (state or {}).get("run_id") or os.environ.get("RUN_ID")
         if _bb_get_snapshot:
             bb_file = _bb_get_snapshot(run_id) or {}

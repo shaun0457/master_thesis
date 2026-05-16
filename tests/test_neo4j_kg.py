@@ -68,7 +68,7 @@ def _mock_driver(record=None):
 
 def test_query_fault_kg_enriched_result():
     """When Neo4j returns data, result should include summary_md and evidence."""
-    from neo4j_kg import query_fault_kg
+    from knowledge.neo4j_kg import query_fault_kg
 
     with patch("neo4j_kg._get_kg_driver", return_value=_mock_driver(_mock_record())):
         result = query_fault_kg(4)
@@ -87,7 +87,7 @@ def test_query_fault_kg_enriched_result():
 
 def test_query_fault_kg_always_has_diagnostic_sensors():
     """diagnostic_sensors should always come from tep_knowledge (authoritative)."""
-    from neo4j_kg import query_fault_kg
+    from knowledge.neo4j_kg import query_fault_kg
 
     with patch("neo4j_kg._get_kg_driver", return_value=_mock_driver(_mock_record())):
         result = query_fault_kg(4)
@@ -100,7 +100,7 @@ def test_query_fault_kg_always_has_diagnostic_sensors():
 
 def test_query_fault_kg_uses_neo4j_description_when_available():
     """description from Neo4j overrides local when Neo4j record is present."""
-    from neo4j_kg import query_fault_kg
+    from knowledge.neo4j_kg import query_fault_kg
 
     custom_desc = "Custom Neo4j description for IDV_4"
     with patch("neo4j_kg._get_kg_driver", return_value=_mock_driver(_mock_record(desc=custom_desc))):
@@ -116,7 +116,7 @@ def test_query_fault_kg_uses_neo4j_description_when_available():
 def test_query_fault_kg_fallback_on_no_env_vars():
     """When NEO4J_URI is not set, should return local fallback without crashing."""
     import os
-    from neo4j_kg import query_fault_kg
+    from knowledge.neo4j_kg import query_fault_kg
 
     with patch.dict(os.environ, {}, clear=False):
         # Ensure NEO4J_URI is not set
@@ -134,7 +134,7 @@ def test_query_fault_kg_fallback_on_no_env_vars():
 
 def test_query_fault_kg_fallback_on_driver_exception():
     """When neo4j driver raises (e.g. AuraDB paused), fallback to local data."""
-    from neo4j_kg import query_fault_kg
+    from knowledge.neo4j_kg import query_fault_kg
 
     def _broken_driver():
         raise ConnectionError("AuraDB paused")
@@ -150,7 +150,7 @@ def test_query_fault_kg_fallback_on_driver_exception():
 
 def test_query_fault_kg_fallback_on_query_exception():
     """When session.run() raises, fallback to local data."""
-    from neo4j_kg import query_fault_kg
+    from knowledge.neo4j_kg import query_fault_kg
 
     bad_driver = MagicMock()
     bad_session = MagicMock()
@@ -168,7 +168,7 @@ def test_query_fault_kg_fallback_on_query_exception():
 
 def test_query_fault_kg_fallback_on_no_record():
     """When Neo4j returns None (fault node not found), fallback to local data."""
-    from neo4j_kg import query_fault_kg
+    from knowledge.neo4j_kg import query_fault_kg
 
     with patch("neo4j_kg._get_kg_driver", return_value=_mock_driver(record=None)):
         result = query_fault_kg(4)
@@ -183,7 +183,7 @@ def test_query_fault_kg_fallback_on_no_record():
 
 def test_query_fault_kg_invalid_fault_id():
     """fault_id outside 0-20 should return error dict."""
-    from neo4j_kg import query_fault_kg
+    from knowledge.neo4j_kg import query_fault_kg
 
     with patch("neo4j_kg._get_kg_driver", return_value=_mock_driver(_mock_record())):
         result = query_fault_kg(99)
@@ -198,7 +198,7 @@ def test_query_fault_kg_invalid_fault_id():
 def test_query_fault_kg_output_is_json_serialisable():
     """query_fault_kg result should be JSON-serialisable (no non-serialisable objects)."""
     import json
-    from neo4j_kg import query_fault_kg
+    from knowledge.neo4j_kg import query_fault_kg
 
     with patch("neo4j_kg._get_kg_driver", return_value=_mock_driver(_mock_record())):
         result = query_fault_kg(4)

@@ -1,4 +1,4 @@
-from context_assembler import DynamicContextAssembler
+from core.context_assembler import DynamicContextAssembler
 
 _assembler = DynamicContextAssembler()
 

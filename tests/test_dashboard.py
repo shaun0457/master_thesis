@@ -83,7 +83,7 @@ def test_dashboard_endpoint_returns_html(tmp_path, monkeypatch):
 
 def test_phase_snippet_contains_diagnosis_rules():
     """Sanity check the Supervisor:diagnose snippet has the hard-rule lines."""
-    from context_assembler import PHASE_SNIPPETS
+    from core.context_assembler import PHASE_SNIPPETS
 
     snippet = PHASE_SNIPPETS.get("Supervisor:diagnose", "")
     assert snippet, "Supervisor:diagnose snippet must exist"
@@ -97,7 +97,7 @@ def test_diagnose_flow_sets_phase_to_diagnose(tmp_path):
     """diagnose_flow should set state['phase']='diagnose' so prompt snippet fires."""
     import pandas as pd
     from unittest.mock import MagicMock, patch
-    from diagnose_flow import diagnose
+    from simulation.diagnose_flow import diagnose
 
     obs = tmp_path / "obs.parquet"
     pd.DataFrame({"xmeas_9": [120.0], "xmeas_7": [50.0]}).to_parquet(obs, index=False)

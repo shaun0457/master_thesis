@@ -21,7 +21,7 @@ def _make_ai_msg_with_tool(name: str, args: dict):
 
 def test_cond_routes_final_answer_to_post_answer():
     """_cond must route final_answer (with evidence) to PostAnswer, not END."""
-    from supervisor_workflow import build_team_graph
+    from agents.supervisor_workflow import build_team_graph
     from langgraph.graph import END
 
     graph = build_team_graph()
@@ -35,7 +35,7 @@ def test_cond_routes_final_answer_to_post_answer():
 
 def test_post_answer_node_is_callable():
     """post_answer_node must be importable and callable without API key."""
-    from supervisor_workflow import post_answer_node
+    from agents.supervisor_workflow import post_answer_node
     # Call with a state that has no final_answer — should return {} gracefully
     state = {"messages": [], "metrics": {}, "blackboard": {}}
     result = post_answer_node(state)

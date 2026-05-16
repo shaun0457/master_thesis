@@ -52,7 +52,7 @@ class TestExtractAndWriteMeFaultFacts:
         monkeypatch.setenv("RUN_ID", "test-d1")
         monkeypatch.setenv("RUNS_DIR", str(tmp_path))
 
-        import bb_tools
+        from agents import bb_tools
         import importlib, delegate_tools
         importlib.reload(bb_tools)
 
@@ -74,9 +74,8 @@ class TestExtractAndWriteMeFaultFacts:
         monkeypatch.setenv("RUN_ID", "test-d2")
         monkeypatch.setenv("RUNS_DIR", str(tmp_path))
 
-        import bb_tools
-        import delegate_tools
-
+        from agents import bb_tools
+        from agents import delegate_tools
         msgs = [
             _make_kg_tool_msg(4, "Reactor cooling water step change",
                               [{"column": "xmeas_9", "process_unit": "Reactor"}]),
@@ -96,9 +95,8 @@ class TestExtractAndWriteMeFaultFacts:
         monkeypatch.setenv("RUN_ID", "test-d3")
         monkeypatch.setenv("RUNS_DIR", str(tmp_path))
 
-        import bb_tools
-        import delegate_tools
-
+        from agents import bb_tools
+        from agents import delegate_tools
         out_state = _make_out_state([])
         delegate_tools._extract_and_write_me_fault_facts(out_state)
 
@@ -116,9 +114,8 @@ class TestReadMeFaultFacts:
         monkeypatch.setenv("RUN_ID", "test-b1")
         monkeypatch.setenv("RUNS_DIR", str(tmp_path))
 
-        import bb_tools
-        import delegate_tools
-
+        from agents import bb_tools
+        from agents import delegate_tools
         sensors = [{"column": "xmeas_9", "process_unit": "Reactor"},
                    {"column": "xmeas_7", "process_unit": "Reactor"}]
         fact = {
@@ -142,7 +139,7 @@ class TestReadMeFaultFacts:
         monkeypatch.setenv("RUN_ID", "test-b2")
         monkeypatch.setenv("RUNS_DIR", str(tmp_path))
 
-        import delegate_tools
+        from agents import delegate_tools
         result = delegate_tools._read_me_fault_facts()
         assert result == ""
 
@@ -150,7 +147,7 @@ class TestReadMeFaultFacts:
         """B3: RUN_ID not set → _read_me_fault_facts returns '' without error."""
         monkeypatch.delenv("RUN_ID", raising=False)
 
-        import delegate_tools
+        from agents import delegate_tools
         result = delegate_tools._read_me_fault_facts()
         assert result == ""
 
@@ -161,7 +158,7 @@ class TestDelegateToDeInjection:
         monkeypatch.setenv("RUN_ID", "test-b4")
         monkeypatch.setenv("RUNS_DIR", str(tmp_path))
 
-        import bb_tools
+        from agents import bb_tools
         sensors = [{"column": "xmeas_9", "process_unit": "Reactor"}]
         fact = {
             "agent": "ME", "source_tool": "kg_query_fault", "fault_id": 4,
@@ -176,7 +173,7 @@ class TestDelegateToDeInjection:
             captured_task["task"] = task
             return {"messages": [], "metrics": {}, "tool_events": []}
 
-        import delegate_tools
+        from agents import delegate_tools
         with patch.object(delegate_tools, "_run_subgraph", side_effect=fake_run_subgraph), \
              patch.object(delegate_tools, "make_blackboard_tools", return_value=([], [])):
             delegate_tools.delegate_to_de("Retrieve sensor data.", {"metrics": {}, "blackboard": {}})
@@ -195,7 +192,7 @@ class TestDelegateToDeInjection:
             captured_task["task"] = task
             return {"messages": [], "metrics": {}, "tool_events": []}
 
-        import delegate_tools
+        from agents import delegate_tools
         with patch.object(delegate_tools, "_run_subgraph", side_effect=fake_run_subgraph), \
              patch.object(delegate_tools, "make_blackboard_tools", return_value=([], [])):
             delegate_tools.delegate_to_de("Retrieve sensor data.", {"metrics": {}, "blackboard": {}})
@@ -212,7 +209,7 @@ class TestParallelMetricsSafety:
     def test_a1_concurrent_increments_are_safe(self):
         """A1: 20 threads incrementing global_tool_calls with lock → final value == 20."""
         import threading
-        from router import _metrics_lock  # will fail until router.py exposes it
+        from agents.router import _metrics_lock  # will fail until router.py exposes it
 
         state = {"metrics": {"global_tool_calls": 0}}
         errors = []

@@ -14,7 +14,7 @@ os.environ.setdefault("GOOGLE_API_KEY", "dummy-key-for-unit-test")
 
 def test_format_task_contract_with_criteria():
     """Contract block must contain both task and success_criteria."""
-    from delegate_tools import _format_task_contract
+    from agents.delegate_tools import _format_task_contract
     block = _format_task_contract(
         "Compute mean of XMEAS_1",
         "Returns a float value and explains the unit"
@@ -27,7 +27,7 @@ def test_format_task_contract_with_criteria():
 
 def test_format_task_contract_without_criteria():
     """Contract block must still work when no criteria provided."""
-    from delegate_tools import _format_task_contract
+    from agents.delegate_tools import _format_task_contract
     block = _format_task_contract("List all fault types")
     assert "[TASK CONTRACT]" in block
     assert "List all fault types" in block
@@ -38,7 +38,7 @@ def test_format_task_contract_without_criteria():
 def test_invoke_stage1_source_uses_format_task_contract():
     """_invoke_stage1 must use _format_task_contract in anchor construction."""
     import inspect
-    import delegate_tools
+    from agents import delegate_tools
     src = inspect.getsource(delegate_tools._invoke_stage1)
     assert "_format_task_contract" in src, "_invoke_stage1 missing _format_task_contract call"
     assert "success_criteria" in src, "_invoke_stage1 missing success_criteria param"
@@ -47,7 +47,7 @@ def test_invoke_stage1_source_uses_format_task_contract():
 
 def test_supervisor_tools_have_success_criteria():
     """All three delegate tool schemas must include success_criteria field."""
-    from supervisor_tools import DelegateMEArgs, DelegateDEArgs, DelegateDSArgs
+    from agents.supervisor_tools import DelegateMEArgs, DelegateDEArgs, DelegateDSArgs
     for cls in (DelegateMEArgs, DelegateDEArgs, DelegateDSArgs):
         fields = cls.model_fields
         assert "success_criteria" in fields, f"{cls.__name__} missing success_criteria field"
@@ -58,7 +58,7 @@ def test_supervisor_tools_have_success_criteria():
 
 def test_anchor_contains_contract_block():
     """After _format_task_contract + _format_bb_index, anchor content must have both sections."""
-    from delegate_tools import _format_task_contract, _format_bb_index
+    from agents.delegate_tools import _format_task_contract, _format_bb_index
     from langchain_core.messages import HumanMessage
 
     bb = {"facts": [{"claim": "Fault 4 is cooling water", "agent": "ME", "confidence": 0.9}]}

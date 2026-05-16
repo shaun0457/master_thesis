@@ -4,8 +4,8 @@ from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
 
 def test_build_context_pack_uses_contract_evidence_and_short_tail():
-    from context_assembler import DynamicContextAssembler
-    from subagent_contracts import build_ticket
+    from core.context_assembler import DynamicContextAssembler
+    from agents.subagent_contracts import build_ticket
 
     state = {
         "messages": [
@@ -52,7 +52,7 @@ def test_build_context_pack_uses_contract_evidence_and_short_tail():
 
 
 def test_validate_de_to_ds_requires_columns_and_path():
-    from subagent_contracts import validate_de_to_ds
+    from agents.subagent_contracts import validate_de_to_ds
 
     good = {
         "messages": [
@@ -86,15 +86,15 @@ def test_validate_de_to_ds_requires_columns_and_path():
 
 
 def test_validate_ds_to_supervisor_accepts_numeric_conclusion_without_artifact():
-    from subagent_contracts import validate_ds_to_supervisor
+    from agents.subagent_contracts import validate_ds_to_supervisor
 
     out_state = {"messages": [AIMessage(content="mean diff = 12.3 and p-value = 0.01")], "tool_events": []}
     assert validate_ds_to_supervisor(out_state, topic_id="t1").status == "ready"
 
 
 def test_run_subgraph_blocks_before_invoke_when_context_cap_exceeded(monkeypatch):
-    import delegate_tools
-    from subagent_contracts import build_ticket
+    from agents import delegate_tools
+    from agents.subagent_contracts import build_ticket
 
     monkeypatch.setattr(
         delegate_tools,
@@ -129,8 +129,7 @@ def test_run_subgraph_blocks_before_invoke_when_context_cap_exceeded(monkeypatch
 
 
 def test_route_and_execute_serializes_result_envelope(monkeypatch):
-    import router
-
+    from agents import router
     monkeypatch.setattr(
         router,
         "_exec_one_tool",

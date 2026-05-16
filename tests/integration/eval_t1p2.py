@@ -16,7 +16,7 @@ os.environ.setdefault("GOOGLE_API_KEY", "dummy-key-for-unit-test")
 
 
 def test_additive_merge():
-    from delegate_tools import _merge_metrics
+    from agents.delegate_tools import _merge_metrics
 
     parent = {"llm_calls_total": 2, "tokens_in_total": 100, "some_string": "old"}
     child = {"llm_calls_total": 3, "tokens_in_total": 50, "some_string": "new", "cache_hits": 1}
@@ -31,7 +31,7 @@ def test_additive_merge():
 
 
 def test_merge_does_not_overwrite_parent_calls():
-    from delegate_tools import _merge_metrics
+    from agents.delegate_tools import _merge_metrics
 
     # Simulates supervisor(2 calls) + ME subgraph(3 calls): total must be 5
     parent = {"llm_calls_total": 2, "llm_latency_ms_sum": 500.0}

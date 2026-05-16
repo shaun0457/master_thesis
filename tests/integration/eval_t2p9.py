@@ -14,7 +14,7 @@ os.environ.setdefault("GOOGLE_API_KEY", "dummy-key-for-unit-test")
 
 def test_format_bb_index_empty():
     """Empty blackboard must return the empty marker."""
-    from delegate_tools import _format_bb_index
+    from agents.delegate_tools import _format_bb_index
     idx = _format_bb_index({})
     assert "[BLACKBOARD INDEX]" in idx
     assert "empty" in idx.lower()
@@ -23,7 +23,7 @@ def test_format_bb_index_empty():
 
 def test_format_bb_index_with_provenance_facts():
     """Provenance facts must show agent/confidence in index."""
-    from delegate_tools import _format_bb_index
+    from agents.delegate_tools import _format_bb_index
     bb = {
         "facts": [
             {"claim": "Fault 4 is cooling water", "agent": "ME", "confidence": 0.9},
@@ -40,7 +40,7 @@ def test_format_bb_index_with_provenance_facts():
 def test_anchor_in_invoke_stage1_source():
     """_invoke_stage1 must reference _format_bb_index (anchor approach)."""
     import inspect
-    import delegate_tools
+    from agents import delegate_tools
     src = inspect.getsource(delegate_tools._invoke_stage1)
     assert "_format_bb_index" in src, "_invoke_stage1 missing _format_bb_index call"
     assert "anchor_msg" in src, "_invoke_stage1 missing anchor_msg"
@@ -51,7 +51,7 @@ def test_anchor_is_last_message():
     """After _invoke_stage1 constructs msgs, the anchor_msg must be the last one."""
     # We can't run _invoke_stage1 without graph setup, so test _format_bb_index
     # produces content that would be an anchor by verifying the construction logic.
-    from delegate_tools import _format_bb_index
+    from agents.delegate_tools import _format_bb_index
     from langchain_core.messages import HumanMessage
     bb = {"facts": [{"claim": "test fact", "agent": "ME", "confidence": 1.0}]}
     bb_index = _format_bb_index(bb)

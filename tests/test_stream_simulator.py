@@ -15,7 +15,7 @@ import pytest
 
 
 def test_parse_pattern_supports_normal_and_fault():
-    from stream_simulator import parse_pattern
+    from simulation.stream_simulator import parse_pattern
 
     phases = parse_pattern("normal:60,fault4:30,fault8:15")
     assert len(phases) == 3
@@ -27,7 +27,7 @@ def test_parse_pattern_supports_normal_and_fault():
 
 
 def test_parse_pattern_rejects_bad_spec():
-    from stream_simulator import parse_pattern
+    from simulation.stream_simulator import parse_pattern
     with pytest.raises(ValueError):
         parse_pattern("garbage:10")
 
@@ -57,7 +57,7 @@ def _make_mini_db(tmp_path: Path) -> str:
 
 
 def test_build_cursor_picks_a_run():
-    from stream_simulator import _build_cursor
+    from simulation.stream_simulator import _build_cursor
     import tempfile
     import pathlib
 
@@ -76,7 +76,7 @@ def test_build_cursor_picks_a_run():
 
 
 def test_build_cursor_returns_none_for_unknown_fault(tmp_path):
-    from stream_simulator import _build_cursor
+    from simulation.stream_simulator import _build_cursor
     db = _make_mini_db(tmp_path)
     conn = sqlite3.connect(db)
     try:
@@ -87,7 +87,7 @@ def test_build_cursor_returns_none_for_unknown_fault(tmp_path):
 
 
 def test_walk_one_tick_advances_sample_idx_linearly(tmp_path):
-    from stream_simulator import _build_cursor, _walk_one_tick
+    from simulation.stream_simulator import _build_cursor, _walk_one_tick
     db = _make_mini_db(tmp_path)
     conn = sqlite3.connect(db)
     try:
@@ -106,7 +106,7 @@ def test_walk_one_tick_advances_sample_idx_linearly(tmp_path):
 
 
 def test_walk_one_tick_rolls_over_to_next_run(tmp_path):
-    from stream_simulator import _build_cursor, _walk_one_tick
+    from simulation.stream_simulator import _build_cursor, _walk_one_tick
 
     db = _make_mini_db(tmp_path)
     conn = sqlite3.connect(db)
@@ -123,7 +123,7 @@ def test_walk_one_tick_rolls_over_to_next_run(tmp_path):
 
 
 def test_post_observations_includes_sample_axis_arrays():
-    from stream_simulator import _post_observations
+    from simulation.stream_simulator import _post_observations
 
     captured = {}
 
@@ -150,7 +150,7 @@ def test_post_observations_includes_sample_axis_arrays():
 
 
 def test_post_observations_handles_non_200():
-    from stream_simulator import _post_observations
+    from simulation.stream_simulator import _post_observations
 
     class FakeResp:
         status_code = 500
@@ -164,7 +164,7 @@ def test_post_observations_handles_non_200():
 
 
 def test_run_once_full_flow(tmp_path, monkeypatch):
-    from stream_simulator import run_once
+    from simulation.stream_simulator import run_once
 
     db = _make_mini_db(tmp_path)
     posted = {}

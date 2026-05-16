@@ -16,7 +16,7 @@ def test_invoke_with_retry_succeeds_after_transient_error():
     """Function should retry on ServiceUnavailable and succeed on second call."""
     from unittest.mock import MagicMock, patch
     from google.api_core.exceptions import ServiceUnavailable
-    from common import invoke_with_retry
+    from core.common import invoke_with_retry
 
     call_count = 0
     def fake_invoke(inputs):
@@ -36,7 +36,7 @@ def test_invoke_with_retry_raises_after_max_attempts():
     """Function should reraise after 3 failed attempts."""
     from unittest.mock import MagicMock
     from google.api_core.exceptions import ServiceUnavailable
-    from common import invoke_with_retry
+    from core.common import invoke_with_retry
 
     call_count = 0
     def always_fail(inputs):
@@ -56,7 +56,7 @@ def test_invoke_with_retry_raises_after_max_attempts():
 def test_invoke_with_retry_retries_on_resource_exhausted():
     """Function should also retry on ResourceExhausted (429)."""
     from google.api_core.exceptions import ResourceExhausted
-    from common import invoke_with_retry
+    from core.common import invoke_with_retry
 
     call_count = 0
     def fail_once(inputs):
@@ -74,7 +74,7 @@ def test_invoke_with_retry_retries_on_resource_exhausted():
 
 def test_invoke_with_retry_no_retry_on_other_errors():
     """Non-retriable errors should propagate immediately without retry."""
-    from common import invoke_with_retry
+    from core.common import invoke_with_retry
 
     call_count = 0
     def fail_value(inputs):
@@ -94,7 +94,7 @@ def test_invoke_with_retry_no_retry_on_other_errors():
 def test_invoke_with_retry_in_source():
     """common.py must export invoke_with_retry and use tenacity."""
     import inspect
-    import common
+    from core import common
     src = inspect.getsource(common)
     assert "invoke_with_retry" in src, "common.py missing invoke_with_retry"
     assert "tenacity" in src or "retry" in src.lower(), "common.py missing retry logic"

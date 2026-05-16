@@ -14,7 +14,7 @@ os.environ.setdefault("GOOGLE_API_KEY", "dummy-key-for-unit-test")
 
 def test_evidence_utilization_basic():
     """Keyword from blackboard fact must be found in answer → score > 0."""
-    from metrics import compute_evidence_utilization
+    from core.metrics import compute_evidence_utilization
     state = {"blackboard": {"facts": [
         {"claim": "Fault 4 is reactor cooling water step change",
          "agent": "ME", "confidence": 0.9}
@@ -27,7 +27,7 @@ def test_evidence_utilization_basic():
 
 def test_evidence_utilization_no_match():
     """Completely unrelated answer must score 0."""
-    from metrics import compute_evidence_utilization
+    from core.metrics import compute_evidence_utilization
     state = {"blackboard": {"facts": [
         {"claim": "reactor cooling water fault", "agent": "ME", "confidence": 0.9}
     ]}}
@@ -38,7 +38,7 @@ def test_evidence_utilization_no_match():
 
 def test_stop_words_do_not_inflate():
     """Fact containing only stop words must score 0 against a stop-word-only answer."""
-    from metrics import compute_evidence_utilization
+    from core.metrics import compute_evidence_utilization
     state = {"blackboard": {"facts": [
         {"claim": "The reactor is a hot unit", "agent": "ME", "confidence": 0.9}
     ]}}
@@ -49,7 +49,7 @@ def test_stop_words_do_not_inflate():
 
 def test_empty_blackboard_returns_zero():
     """Empty blackboard must return 0.0."""
-    from metrics import compute_evidence_utilization
+    from core.metrics import compute_evidence_utilization
     state = {"blackboard": {"facts": []}}
     score = compute_evidence_utilization(state, "Some answer text here.")
     assert score == 0.0
@@ -58,7 +58,7 @@ def test_empty_blackboard_returns_zero():
 
 def test_string_fact_also_handled():
     """Legacy string facts (pre-T2-P6) must still be handled gracefully."""
-    from metrics import compute_evidence_utilization
+    from core.metrics import compute_evidence_utilization
     state = {"blackboard": {"facts": ["reactor cooling water fault 4"]}}
     score = compute_evidence_utilization(state, "reactor cooling water caused fault 4.")
     assert score > 0.0, f"String fact not handled, score={score}"
