@@ -2,6 +2,8 @@
 
 > A production-grade multi-agent AI system that diagnoses industrial process faults through collaborative reasoning between specialized AI experts.
 
+**English** | [繁體中文](./README.zh-TW.md)
+
 ![Python](https://img.shields.io/badge/Python-3.11+-blue?logo=python)
 ![LangGraph](https://img.shields.io/badge/LangGraph-0.2+-green)
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.110+-009688?logo=fastapi)
