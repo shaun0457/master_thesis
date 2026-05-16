@@ -170,6 +170,21 @@ python eval/regression_gate.py
 
 ---
 
+## Example Questions
+
+These are the kinds of questions the system is designed to answer. Each requires the Supervisor to coordinate multiple experts before producing an answer.
+
+**Sensor anomaly diagnosis**
+> *We observe sporadic, self-driven spikes in the Separator level (XMEAS_12) with no fault ID provided. Propose ≥3 mechanistic hypotheses, design falsifiable tests, run lead-lag / causal analysis, and publish a candidate DAG with confidences.*
+
+**Process root-cause investigation**
+> *We suspect cooling-loop mechanisms are driving reactor stability changes, but tag semantics for "cooling water inlet temperature" are uncertain. Build/update the tag map with evidence, run multi-window lead-lag scans, and provide mechanistic rationale with actionable interventions.*
+
+**Optimization under constraints**
+> *Management targets +5–10% throughput without materially increasing risk, under possible loop saturation or upstream composition variability. Specify mechanistic constraints, build a response surface via historical counterfactuals, and propose conservative/aggressive set-points with monitoring KPIs and rollback criteria.*
+
+---
+
 ## Project Context
 
 This system was built as the implementation artifact for a master's thesis on **multi-agent system design for industrial fault diagnosis**. The research investigates how different prompting strategies (standard, debate, Delphi, PTOW) affect diagnosis accuracy across TEP fault scenarios.
@@ -178,6 +193,17 @@ The codebase is designed to be research-grade but production-shaped:
 - modular enough to swap LLMs or agent strategies
 - observable via structured run logs and metrics
 - regression-gated against a golden eval set
+
+---
+
+## Research Background
+
+The thesis research behind this project is documented in [`docs/research_context/`](./docs/research_context/):
+
+- **01_Motivation** — industrial relevance and the case for multi-agent fault diagnosis
+- **02_Definitions** — key constructs: stability, cooperation quality, knowledge flow metrics
+- **03_Methods** — experimental framework, metric definitions, blackboard architecture
+- **04_Discussion** — transferability to manufacturing governance, limitations, future work
 
 ---
 
